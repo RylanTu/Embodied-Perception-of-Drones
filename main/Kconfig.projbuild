@@ -1,0 +1,116 @@
+menu "Drone controller"
+config DRONE_SENSOR_DEBUG_MODE
+    bool "Direct single-sensor debug mode (bypass TCA9548A)"
+    default n
+    help
+        Connect one SDP3x directly to the configured SDA/SCL pins and send its
+        data over native USB serial. TCA9548A is bypassed. Servo control remains
+        available according to the selected servo mode. Only one default-address
+        SDP3x may be connected.
+
+config DRONE_I2C_SDA_GPIO
+    int "I2C SDA GPIO"
+    default 8
+config DRONE_I2C_SCL_GPIO
+    int "I2C SCL GPIO"
+    default 9
+config DRONE_I2C_FREQ_HZ
+    int "I2C frequency (Hz)"
+    default 400000
+config DRONE_I2C_TIMEOUT_MS
+    int "I2C timeout (ms)"
+    default 20
+config DRONE_TCA9548A_ADDR
+    hex "TCA9548A address"
+    default 0x70
+config DRONE_SDP3X_ADDR
+    hex "SDP3x address"
+    default 0x21
+config DRONE_SAMPLE_RATE_HZ
+    int "Five-sensor output rate (Hz)"
+    range 1 100
+    default 100
+
+choice DRONE_OUTPUT_FORMAT_CHOICE
+    prompt "Default output format"
+    default DRONE_OUTPUT_CSV
+config DRONE_OUTPUT_CSV
+    bool "CSV"
+config DRONE_OUTPUT_JSON
+    bool "JSON lines"
+config DRONE_OUTPUT_BINARY
+    bool "Binary"
+endchoice
+config DRONE_OUTPUT_FORMAT
+    int
+    default 0 if DRONE_OUTPUT_CSV
+    default 1 if DRONE_OUTPUT_JSON
+    default 2 if DRONE_OUTPUT_BINARY
+
+choice DRONE_SERVO_MODE_CHOICE
+    prompt "Servo control mode"
+    default DRONE_SERVO_MODE_PULSE
+config DRONE_SERVO_MODE_PULSE
+    bool "Pulse + direction"
+config DRONE_SERVO_MODE_MODBUS
+    bool "RS485 Modbus RTU"
+endchoice
+config DRONE_SERVO_MODE
+    int
+    default 0 if DRONE_SERVO_MODE_PULSE
+    default 1 if DRONE_SERVO_MODE_MODBUS
+config DRONE_SERVO_PULSE_GPIO
+    int "Pulse GPIO"
+    default 4
+config DRONE_SERVO_DIR_GPIO
+    int "Direction GPIO"
+    default 5
+config DRONE_SERVO_ENABLE_GPIO
+    int "Enable GPIO"
+    default 6
+config DRONE_SERVO_ENABLE_ACTIVE_LOW
+    bool "Enable output active-low"
+    default y
+config DRONE_SERVO_DIR_INVERT
+    bool "Invert direction output"
+    default n
+config DRONE_SERVO_DEFAULT_FREQ_HZ
+    int "Default pulse/test-wave frequency (Hz)"
+    default 10000
+config DRONE_SERVO_MIN_FREQ_HZ
+    int "Minimum ramp frequency (Hz)"
+    default 100
+config DRONE_SERVO_MAX_FREQ_HZ
+    int "Maximum pulse frequency (Hz)"
+    range 100 500000
+    default 200000
+
+config DRONE_RS485_UART_NUM
+    int "RS485 UART number"
+    default 1
+config DRONE_RS485_TX_GPIO
+    int "RS485 TX GPIO"
+    default 17
+config DRONE_RS485_RX_GPIO
+    int "RS485 RX GPIO"
+    default 18
+config DRONE_RS485_DE_GPIO
+    int "RS485 DE/RE GPIO"
+    default 16
+config DRONE_RS485_BAUD_RATE
+    int "RS485 baud rate"
+    default 9600
+config DRONE_RS485_PARITY
+    int
+    default 0
+config DRONE_RS485_STOP_BITS
+    int
+    default 3
+config DRONE_MODBUS_SLAVE_ADDR
+    int "P100S Modbus slave address"
+    range 1 254
+    default 1
+config DRONE_MODBUS_TIMEOUT_MS
+    int "Modbus timeout (ms)"
+    default 100
+endmenu

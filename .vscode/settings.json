@@ -1,0 +1,26 @@
+{
+  "C_Cpp.intelliSenseEngine": "default",
+  "idf.extensionActivationMode": "always",
+  "idf.openOcdConfigs": [
+    "board/esp32s3-builtin.cfg"
+  ],
+  "idf.currentSetup": "D:\\esp\\v6.0.2\\esp-idf",
+  "idf.customExtraVars": {
+    "IDF_TARGET": "esp32s3"
+  },
+  "clangd.path": "D:\\Espressif\\tools\\esp-clang\\esp-20.1.1_20250829\\esp-clang\\bin\\clangd.exe",
+  "clangd.arguments": [
+    "--background-index",
+    "--query-driver=**",
+    "--compile-commands-dir=d:\\Code Project\\Drone\\build"
+  ],
+  "idf.portWin": "COM6",
+  "idf.flashType": "UART",
+  "python.analysis.extraPaths": [
+    "C:\\Users\\Rylan\\.kendryte\\k230_canmv_stubs\\b6ee41babc1d4ae46b0b52ad551d0047355a49f3"
+  ],
+  "python.analysis.stubPath": "C:\\Users\\Rylan\\.kendryte\\k230_canmv_pylance\\113d19192b529d24\\typings",
+  "python.analysis.diagnosticSeverityOverrides": {
+    "reportMissingModuleSource": "none"
+  }
+}
