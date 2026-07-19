@@ -31,6 +31,52 @@ config DRONE_SAMPLE_RATE_HZ
     range 1 100
     default 100
 
+choice DRONE_FILTER_MODE
+    prompt "Pressure filter"
+    default DRONE_FILTER_KALMAN
+config DRONE_FILTER_NONE
+    bool "Disabled"
+config DRONE_FILTER_EMA
+    bool "Exponential moving average"
+config DRONE_FILTER_MOVING_AVERAGE
+    bool "Moving-window average"
+config DRONE_FILTER_KALMAN
+    bool "One-dimensional Kalman filter"
+endchoice
+
+config DRONE_FILTER_EMA_ALPHA_PERMILLE
+    int "EMA alpha (1-1000 permille)"
+    range 1 1000
+    default 200
+    depends on DRONE_FILTER_EMA
+    help
+        200 means alpha=0.2. Smaller values provide stronger smoothing but
+        increase response delay.
+
+config DRONE_FILTER_WINDOW_SIZE
+    int "Moving-average window size"
+    range 2 32
+    default 10
+    depends on DRONE_FILTER_MOVING_AVERAGE
+
+config DRONE_FILTER_KALMAN_Q_MILLI
+    int "Kalman process noise Q (0.001 Pa^2)"
+    range 1 1000000
+    default 10
+    depends on DRONE_FILTER_KALMAN
+    help
+        Default 10 means Q=0.010 Pa^2. Increasing Q makes the filter track
+        pressure changes faster but provides less smoothing.
+
+config DRONE_FILTER_KALMAN_R_MILLI
+    int "Kalman measurement noise R (0.001 Pa^2)"
+    range 1 10000000
+    default 1000
+    depends on DRONE_FILTER_KALMAN
+    help
+        Default 1000 means R=1.000 Pa^2. Increasing R provides stronger
+        smoothing but increases response delay.
+
 choice DRONE_OUTPUT_FORMAT_CHOICE
     prompt "Default output format"
     default DRONE_OUTPUT_CSV

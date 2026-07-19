@@ -23,6 +23,19 @@ idf.py build flash
 
 配置位于 `Drone controller` 菜单，可选择：单传感器直连调试模式、采样频率（默认 100 Hz）、CSV/JSON/二进制输出、脉冲或 Modbus 模式、全部 GPIO、脉冲频率范围和 RS485 参数。N16R8 的 Flash/PSRAM 默认值位于 `sdkconfig.defaults`。
 
+### 压差滤波
+
+`Drone controller -> Pressure filter` 提供：
+
+- `Disabled`：不滤波。
+- `Exponential moving average`：默认模式，默认系数为 0.2；系数越小越平滑，但响应越慢。
+- `Moving-window average`：默认窗口为 10，可配置为 2～32。
+- `One-dimensional Kalman filter`：一维卡尔曼滤波，每个传感器独立估计。默认 `Q=0.010 Pa²`、`R=1.000 Pa²`。
+
+滤波仅作用于压差值，温度保持原始读数。CRC 或 I²C 通信失败的数据不会进入滤波器。
+
+卡尔曼参数中，增大 Q 会加快对真实压力变化的跟踪，但平滑效果减弱；增大 R 会增强平滑，但响应延迟增加。配置项使用 `0.001 Pa²` 为单位，例如 Q 填 `10` 表示 `0.010 Pa²`。
+
 ### 单传感器直连调试模式
 
 在 `idf.py menuconfig -> Drone controller` 中启用 `Direct single-sensor debug mode (bypass TCA9548A)`。启用后，将一个 SDP3x 直接连接到 GPIO8（SDA）和 GPIO9（SCL）；固件完全不初始化或访问 TCA9548A。直连传感器作为第 1 路输出，其余四路标记为无效。伺服控制仍按所选的脉冲或 Modbus 模式正常初始化，可继续使用网页或串口命令控制。由于 SDP3x 默认地址相同，一次只能直连一个传感器。
