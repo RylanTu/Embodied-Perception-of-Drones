@@ -1,0 +1,2 @@
+pyserial>=3.5,<4
+# numpy和ais_bench由Atlas/CANN运行环境提供；仅启用OM模型时需要。

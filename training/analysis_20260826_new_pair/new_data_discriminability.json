@@ -1,0 +1,234 @@
+{
+  "files": {
+    "obstacle": "C:\\Users\\Rylan\\Downloads\\20260826T071130_batch_001.csv",
+    "clear": "C:\\Users\\Rylan\\Downloads\\20260826T070742_batch_001.csv",
+    "prop_obstacle": "C:\\Users\\Rylan\\Downloads\\20260826T071130_batch_001.csv",
+    "prop_clear": "C:\\Users\\Rylan\\Downloads\\20260826T071130_batch_001.csv"
+  },
+  "propeller_files_identical": true,
+  "trials": {
+    "obstacle": 20,
+    "clear": 20,
+    "obstacle_sources": 1,
+    "clear_sources": 1
+  },
+  "sample_rate_hz": {
+    "median": 200.0,
+    "q1": 200.0,
+    "q3": 200.0
+  },
+  "stored_label_values": {
+    "obstacle": [
+      1
+    ],
+    "clear": [
+      0
+    ]
+  },
+  "features": {
+    "raw": {
+      "rise_300ms": {
+        "clear_mean": -0.033327499999999996,
+        "obstacle_mean": -0.011252499999999986,
+        "clear_median": 0.07292500000000002,
+        "obstacle_median": 0.08332499999999998,
+        "cohen_d": 0.05576706550731181,
+        "auc": 0.53,
+        "oriented_auc": 0.53,
+        "auc_95ci": [
+          0.3525,
+          0.7025624999999998
+        ],
+        "best_same_data_threshold": {
+          "threshold": -0.35315,
+          "direction": ">=",
+          "recall": 0.85,
+          "specificity": 0.25,
+          "balanced_accuracy": 0.55
+        }
+      },
+      "slope_300ms": {
+        "clear_mean": 0.07816607390941924,
+        "obstacle_mean": 0.13559594331758826,
+        "clear_median": 0.05510225062517364,
+        "obstacle_median": 0.2273645457071409,
+        "cohen_d": 0.05270594427161114,
+        "auc": 0.5275,
+        "oriented_auc": 0.5275,
+        "auc_95ci": [
+          0.3449375,
+          0.7125624999999998
+        ],
+        "best_same_data_threshold": {
+          "threshold": 0.12915143095304255,
+          "direction": ">=",
+          "recall": 0.65,
+          "specificity": 0.55,
+          "balanced_accuracy": 0.6000000000000001
+        }
+      },
+      "slope_change": {
+        "clear_mean": 0.1253142817449291,
+        "obstacle_mean": -0.2676284245623784,
+        "clear_median": 0.2376529591553209,
+        "obstacle_median": -0.574361489302584,
+        "cohen_d": -0.2514131713372756,
+        "auc": 0.4275,
+        "oriented_auc": 0.5725,
+        "auc_95ci": [
+          0.3974375,
+          0.755
+        ],
+        "best_same_data_threshold": {
+          "threshold": -0.8344501250347319,
+          "direction": "<=",
+          "recall": 0.45,
+          "specificity": 0.85,
+          "balanced_accuracy": 0.65
+        }
+      },
+      "peak_rise": {
+        "clear_mean": 1.1131325,
+        "obstacle_mean": 1.2515525,
+        "clear_median": 1.077125,
+        "obstacle_median": 1.1354250000000001,
+        "cohen_d": 0.4891444617309493,
+        "auc": 0.6125,
+        "oriented_auc": 0.6125,
+        "auc_95ci": [
+          0.4324375,
+          0.7725
+        ],
+        "best_same_data_threshold": {
+          "threshold": 1.02395,
+          "direction": ">=",
+          "recall": 0.8,
+          "specificity": 0.4,
+          "balanced_accuracy": 0.6000000000000001
+        }
+      },
+      "range_1s": {
+        "clear_mean": 2.58542,
+        "obstacle_mean": 2.5766649999999998,
+        "clear_median": 2.5416499999999997,
+        "obstacle_median": 2.5728999999999997,
+        "cohen_d": -0.023017619841928284,
+        "auc": 0.5,
+        "oriented_auc": 0.5,
+        "auc_95ci": [
+          0.3125,
+          0.675
+        ],
+        "best_same_data_threshold": {
+          "threshold": 2.3208,
+          "direction": ">=",
+          "recall": 0.8,
+          "specificity": 0.3,
+          "balanced_accuracy": 0.55
+        }
+      }
+    },
+    "filtered": {
+      "rise_300ms": {
+        "clear_mean": 0.0005886369571504596,
+        "obstacle_mean": 0.021926672663229584,
+        "clear_median": -0.022614748242410956,
+        "obstacle_median": 0.05144271374747904,
+        "cohen_d": 0.07031070451300261,
+        "auc": 0.56,
+        "oriented_auc": 0.56,
+        "auc_95ci": [
+          0.3749375,
+          0.7375624999999997
+        ],
+        "best_same_data_threshold": {
+          "threshold": -0.0026687982666461184,
+          "direction": ">=",
+          "recall": 0.65,
+          "specificity": 0.55,
+          "balanced_accuracy": 0.6000000000000001
+        }
+      },
+      "slope_300ms": {
+        "clear_mean": 0.1311170982599494,
+        "obstacle_mean": 0.12289197133113883,
+        "clear_median": 0.168458369324319,
+        "obstacle_median": 0.18272087073234827,
+        "cohen_d": -0.008364282560672131,
+        "auc": 0.51,
+        "oriented_auc": 0.51,
+        "auc_95ci": [
+          0.3299375,
+          0.69
+        ],
+        "best_same_data_threshold": {
+          "threshold": 0.54588469844069,
+          "direction": ">=",
+          "recall": 0.45,
+          "specificity": 0.7,
+          "balanced_accuracy": 0.575
+        }
+      },
+      "slope_change": {
+        "clear_mean": 0.23026725255195546,
+        "obstacle_mean": -0.13858792097482395,
+        "clear_median": 0.378100837265054,
+        "obstacle_median": 0.022082658162252966,
+        "cohen_d": -0.2457973771932053,
+        "auc": 0.4375,
+        "oriented_auc": 0.5625,
+        "auc_95ci": [
+          0.3725,
+          0.755
+        ],
+        "best_same_data_threshold": {
+          "threshold": -0.8621279626786441,
+          "direction": "<=",
+          "recall": 0.4,
+          "specificity": 0.9,
+          "balanced_accuracy": 0.65
+        }
+      },
+      "peak_rise": {
+        "clear_mean": 0.8296625084995027,
+        "obstacle_mean": 0.9520288656057521,
+        "clear_median": 0.8549149340448841,
+        "obstacle_median": 0.8560286585731927,
+        "cohen_d": 0.5541050543886398,
+        "auc": 0.6,
+        "oriented_auc": 0.6,
+        "auc_95ci": [
+          0.41743749999999996,
+          0.77
+        ],
+        "best_same_data_threshold": {
+          "threshold": 0.9966738160678066,
+          "direction": ">=",
+          "recall": 0.35,
+          "specificity": 0.9,
+          "balanced_accuracy": 0.625
+        }
+      },
+      "range_1s": {
+        "clear_mean": 2.0996388382380804,
+        "obstacle_mean": 2.154638261847305,
+        "clear_median": 2.0736930341941844,
+        "obstacle_median": 2.126757499616069,
+        "cohen_d": 0.17265647239674276,
+        "auc": 0.5575,
+        "oriented_auc": 0.5575,
+        "auc_95ci": [
+          0.3699375,
+          0.7375
+        ],
+        "best_same_data_threshold": {
+          "threshold": 2.251337553387771,
+          "direction": ">=",
+          "recall": 0.4,
+          "specificity": 0.8,
+          "balanced_accuracy": 0.6000000000000001
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#080d17">
+  <title>Atlas 实验控制台</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main class="shell">
+  <header class="topbar">
+    <div class="brand">
+      <h1>Atlas 实验控制台</h1>
+    </div>
+    <div class="status-cluster">
+      <span id="source" class="pill">真实传感器</span>
+      <span id="link" class="pill bad">串口离线</span>
+      <span id="lidarLink" class="pill">雷达关闭</span>
+    </div>
+  </header>
+
+  <section class="panel telemetry-panel">
+    <div class="panel-head">
+      <div><h2>实时压力</h2></div>
+      <div id="obstacle" class="obstacle">无障碍</div>
+    </div>
+    <div id="pressures" class="numbers"></div>
+    <div id="sensorBusStatus" class="sensor-bus-status">I²C诊断等待设备状态</div>
+    <canvas id="chart" width="1300" height="300"></canvas>
+    <div id="motion" class="motion-line">等待设备数据</div>
+  </section>
+
+  <section class="panel batch-panel">
+    <div class="panel-head">
+      <div><h2>批量采集</h2></div>
+      <div id="batchState" class="batch-state">尚未开始</div>
+    </div>
+
+    <div class="presetbar">
+      <select id="presetSelect" aria-label="已保存的实验参数"><option value="">选择实验参数方案</option></select>
+      <input id="presetName" maxlength="64" placeholder="方案名称">
+      <button onclick="saveExperimentPreset()" class="ghost">保存当前参数</button>
+      <button onclick="loadExperimentPreset()" class="ghost">载入</button>
+      <button onclick="deleteExperimentPreset()" class="preset-delete">删除</button>
+    </div>
+
+    <div class="field-grid primary-grid">
+      <label>实验条件<input id="condition" value="default_condition"></label>
+      <label>批次名称<input id="batchId" value="batch_001"></label>
+      <label>样本标签<select id="label"><option value="0">无障碍</option><option value="1">有障碍</option></select></label>
+      <label>实验次数<input id="count" type="number" value="20" min="1" max="500"></label>
+      <label>起点 <em>mm</em><input id="start" type="number" value="10"></label>
+      <label>终点 <em>mm</em><input id="end" type="number" value="1900"></label>
+      <label>测量速度 <em>mm/s</em><input id="speed" type="number" value="1500" max="2000"></label>
+      <label>复位速度 <em>mm/s</em><input id="returnSpeed" type="number" value="1000"></label>
+    </div>
+
+    <details>
+      <summary>缓启停与实验节拍 <span>展开参数</span></summary>
+      <div class="field-grid detail-grid">
+        <label>测量缓启动 <em>mm</em><input id="accel" type="number" value="225" min="0" step="0.001"></label>
+        <label>测量缓停止 <em>mm</em><input id="decel" type="number" value="75" min="0" step="0.001"></label>
+        <label>复位缓启动 <em>mm</em><input id="returnAccel" type="number" value="150" min="0" step="0.001"></label>
+        <label>复位缓停止 <em>mm</em><input id="returnDecel" type="number" value="150" min="0" step="0.001"></label>
+        <label>基线等待 <em>ms</em><input id="baselineWait" type="number" value="2000"></label>
+        <label>终点停留 <em>ms</em><input id="endDwell" type="number" value="300"></label>
+        <label>实验间隔 <em>ms</em><input id="betweenWait" type="number" value="1000"></label>
+        <label>障碍距离 <em>mm</em><input id="distance" type="number" value="0"></label>
+        <label class="span2">备注<input id="note"></label>
+      </div>
+    </details>
+
+    <div class="progress"><i id="bar"></i></div>
+    <div class="actionbar">
+      <button id="batchStart" class="primary">开始批次</button>
+      <button id="batchPause" class="ghost">完成本次后暂停</button>
+      <button id="batchStop" class="danger">停止</button>
+    </div>
+  </section>
+
+  <div class="dashboard-grid">
+    <section class="panel slide-panel">
+      <div class="panel-head compact"><div><h2>滑台控制</h2></div></div>
+      <div class="field-grid compact-grid">
+        <label>软限位最小 <em>mm</em><input id="softMin" type="number" value="0"></label>
+        <label>软限位最大 <em>mm</em><input id="softMax" type="number" value="2000"></label>
+        <label>脉冲 / mm<input id="ppm" type="number" value="80"></label>
+        <label>最高速度 <em>mm/s</em><input id="maxSpeed" type="number" value="2000" max="2000"></label>
+        <label>目标位置 <em>mm</em><input id="target" type="number" value="10"></label>
+        <label>手动速度 <em>mm/s</em><input id="manualSpeed" type="number" value="5" max="2000"></label>
+        <label>缓启动 <em>mm</em><input id="manualAccel" type="number" value="2.5" min="0" step="0.001"></label>
+        <label>缓停止 <em>mm</em><input id="manualDecel" type="number" value="2.5" min="0" step="0.001"></label>
+      </div>
+      <div class="actionbar wrap-actions">
+        <button onclick="configureMotion()" class="ghost">应用参数</button>
+        <button onclick="control('clear_enable')" class="ghost">使能</button>
+        <button onclick="manualMove()" class="primary">移动</button>
+        <button onclick="control('disable')" class="ghost">关闭使能</button>
+        <button onclick="control('stop')" class="danger">软件停止</button>
+      </div>
+    </section>
+
+    <section class="panel device-panel">
+      <div class="panel-head compact"><div><h2>设备连接</h2></div></div>
+      <div class="field-grid compact-grid">
+        <label>数据来源<select id="testEnabled"><option value="false">真实传感器</option><option value="true">ESP32 模拟</option></select></label>
+        <label>模拟基线 <em>Pa</em><input id="testBaseline" type="number" value="0"></label>
+        <label>模拟幅值 <em>Pa</em><input id="testAmplitude" type="number" value="5"></label>
+        <label>模拟周期 <em>ms</em><input id="testPeriod" type="number" value="2000"></label>
+        <label>模拟脉宽 <em>ms</em><input id="testWidth" type="number" value="150"></label>
+        <label>绘图滤波<select id="filterEnabled"><option value="true">开启</option><option value="false">关闭</option></select></label>
+        <label>绘图中值窗口<select id="filterWindow"><option value="5">5点</option><option value="3">3点</option><option value="1">关闭中值</option></select></label>
+        <label>绘图 EMA 权重<input id="filterAlpha" type="number" value="0.35" min="0.05" max="1" step="0.05"></label>
+        <label>串口设备<input id="serialPort" value="/dev/ttyACM0"></label>
+        <label>波特率<input id="baud" type="number" value="115200"></label>
+        <label>激光雷达<select id="lidarEnabled"><option value="false">关闭</option><option value="true">开启</option></select></label>
+        <label>雷达串口<input id="lidarPort" value="/dev/ttyUSB0"></label>
+        <label>雷达波特率<input id="lidarBaud" type="number" value="115200"></label>
+        <label>安装俯角 <em>°</em><input id="lidarPitch" type="number" value="45" step="0.1"></label>
+      </div>
+      <div class="actionbar wrap-actions"><button onclick="applyTest()" class="primary">应用数据源</button><button onclick="saveFilter()" class="ghost">保存绘图滤波</button><button onclick="saveSerial()" class="ghost">重连ESP串口</button><button onclick="saveLidar()" class="ghost">保存雷达设置</button></div>
+      <div id="serialError" class="subtle-status"></div>
+      <div id="lidarStatus" class="subtle-status">雷达未启用</div>
+    </section>
+
+    <section class="panel inference-panel">
+      <div class="panel-head compact"><div><h2>推理参数</h2></div></div>
+      <div class="field-grid compact-grid">
+        <label>OM模型<select id="modelEnabled"><option value="false">关闭</option><option value="true">启用</option></select></label>
+        <label>模型阈值<input id="modelThreshold" type="number" min="0.01" max="0.99" step=".01"></label>
+        <label class="span2">模型路径<input id="modelPath"></label>
+        <label>模型窗口 <em>点</em><input id="modelWindow" type="number"></label>
+        <label>输入通道数<input id="modelChannels" type="number" min="1" max="5"></label>
+        <label>LIF alpha<input id="alpha" type="number" step=".01"></label>
+        <label>触发通道数<input id="channels" type="number"></label>
+        <label>基线时间 <em>s</em><input id="baselineTau" type="number"></label>
+        <label>时间窗口 <em>ms</em><input id="windowMs" type="number"></label>
+        <label>保持时间 <em>ms</em><input id="holdMs" type="number"></label>
+        <label class="span2">五路阈值 <em>Pa</em><input id="thresholds"></label>
+        <label class="span2">五路增益<input id="gains"></label>
+      </div>
+      <div class="actionbar wrap-actions"><button onclick="saveInference()" class="primary">保存参数</button><button onclick="control('baseline')" class="ghost">重学基线</button></div>
+      <div id="modelStatus" class="subtle-status">模型状态等待数据</div>
+    </section>
+
+    <section class="panel files-panel">
+      <div class="panel-head compact"><div><h2>实验文件</h2></div><button onclick="loadFiles()" class="icon-button" aria-label="刷新文件">刷新</button></div>
+      <div id="files" class="files">暂无文件</div>
+    </section>
+  </div>
+
+  <section class="panel plots-panel">
+    <div class="panel-head"><div><h2>实验图像</h2></div></div>
+    <div class="plotgrid">
+      <article><div class="plot-title"><span>最近批次</span><small>单批次</small></div><a id="batchPlotLink"><img id="batchPlot" alt="批次结束后自动显示"></a></article>
+      <article><div class="plot-title"><span>条件对比</span><small>全部批次</small></div><a id="conditionPlotLink"><img id="conditionPlot" alt="批次结束后自动显示"></a></article>
+    </div>
+  </section>
+
+  <div id="toast" class="toast"></div>
+</main>
+<script src="app.js"></script>
+</body>
+</html>

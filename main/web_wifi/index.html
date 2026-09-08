@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0b111b">
+  <title>ESP32 WiFi实验台</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<main class="shell">
+  <header><h1>ESP32 WiFi实验台</h1><span id="link" class="pill bad">正在连接</span></header>
+
+  <section class="panel telemetry">
+    <div class="head"><h2>实时压力</h2><span id="motion">等待数据</span></div>
+    <div id="pressures" class="numbers"></div>
+    <div id="sensorBus" class="sensor-bus">I²C诊断等待数据</div>
+    <canvas id="chart" width="1300" height="260"></canvas>
+  </section>
+
+  <section class="panel">
+    <div class="head"><h2>批量采集</h2><span id="batchState">尚未开始</span></div>
+    <div class="preset">
+      <input id="presetName" placeholder="参数方案名称">
+      <button id="savePreset">保存参数</button>
+      <select id="presetSelect"><option value="">选择已保存方案</option></select>
+      <button id="loadPreset">载入</button>
+    </div>
+    <div class="fields four">
+      <label>实验条件<input id="condition" value="nofan_1500"></label>
+      <label>批次名称<input id="batchId" value="batch_001"></label>
+      <label>标签<select id="label"><option value="0">无障碍</option><option value="1">有障碍</option></select></label>
+      <label>实验次数<input id="count" type="number" value="20" min="1" max="500"></label>
+      <label>起点 mm<input id="start" type="number" value="10"></label>
+      <label>终点 mm<input id="end" type="number" value="1900"></label>
+      <label>测量速度 mm/s<input id="speed" type="number" value="1500" max="2000"></label>
+      <label>复位速度 mm/s<input id="returnSpeed" type="number" value="1000" max="2000"></label>
+      <label>测量缓启动 mm<input id="accel" type="number" value="225" min="0" step="0.001"></label>
+      <label>测量缓停止 mm<input id="decel" type="number" value="75" min="0" step="0.001"></label>
+      <label>复位缓启动 mm<input id="returnAccel" type="number" value="150" min="0" step="0.001"></label>
+      <label>复位缓停止 mm<input id="returnDecel" type="number" value="150" min="0" step="0.001"></label>
+      <label>基线等待 ms<input id="baselineWait" type="number" value="2000"></label>
+      <label>终点停留 ms<input id="endDwell" type="number" value="300"></label>
+      <label>实验间隔 ms<input id="betweenWait" type="number" value="1000"></label>
+      <label>障碍距离 mm<input id="distance" type="number" value="0"></label>
+      <label class="span4">备注<input id="note"></label>
+    </div>
+    <div class="progress"><i id="bar"></i></div>
+    <div class="actions"><button id="startBatch" class="primary">开始并保存CSV</button><button id="pauseBatch">完成本次后暂停</button><button id="stopBatch" class="danger">停止</button></div>
+    <div class="stats"><span>进度 <b id="progress">0/0</b></span><span>采样 <b id="rows">0</b></span><span>丢帧 <b id="dropped">0</b></span><span>频率 <b id="rate">0 Hz</b></span></div>
+  </section>
+
+  <div class="grid">
+    <section class="panel">
+      <div class="head"><h2>滑台参数</h2></div>
+      <div class="fields two">
+        <label>软限位最小 mm<input id="softMin" type="number" value="0"></label>
+        <label>软限位最大 mm<input id="softMax" type="number" value="2000"></label>
+        <label>每毫米脉冲<input id="ppm" type="number" value="80"></label>
+        <label>最高速度 mm/s<input id="maxSpeed" type="number" value="2000"></label>
+        <label>手动目标 mm<input id="target" type="number" value="20"></label>
+        <label>手动速度 mm/s<input id="manualSpeed" type="number" value="10"></label>
+        <label>手动缓启动 mm<input id="manualAccel" type="number" value="2.5" min="0" step="0.001"></label>
+        <label>手动缓停止 mm<input id="manualDecel" type="number" value="2.5" min="0" step="0.001"></label>
+      </div>
+      <div class="actions"><button id="applyMotion">应用参数</button><button id="enable">使能</button><button id="move" class="primary">移动</button><button id="disable">关闭使能</button><button id="stop" class="danger">软件停止</button></div>
+    </section>
+
+    <section class="panel">
+      <div class="head"><h2>数据源</h2></div>
+      <div class="fields two">
+        <label>模式<select id="testEnabled"><option value="0">真实传感器</option><option value="1">ESP32模拟</option></select></label>
+        <label>模拟基线 Pa<input id="testBaseline" type="number" value="0"></label>
+        <label>模拟幅值 Pa<input id="testAmplitude" type="number" value="5"></label>
+        <label>模拟周期 ms<input id="testPeriod" type="number" value="2000"></label>
+        <label>模拟脉宽 ms<input id="testWidth" type="number" value="150"></label>
+      </div>
+      <div class="actions"><button id="applyTest" class="primary">应用数据源</button></div>
+      <div id="log" class="log"></div>
+    </section>
+  </div>
+</main>
+<script src="/app.js"></script>
+</body>
+</html>

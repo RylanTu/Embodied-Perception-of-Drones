@@ -10,10 +10,10 @@ config DRONE_SENSOR_DEBUG_MODE
 
 config DRONE_I2C_SDA_GPIO
     int "I2C SDA GPIO"
-    default 8
+    default 1
 config DRONE_I2C_SCL_GPIO
     int "I2C SCL GPIO"
-    default 9
+    default 2
 config DRONE_I2C_FREQ_HZ
     int "I2C frequency (Hz)"
     default 400000
@@ -28,8 +28,41 @@ config DRONE_SDP3X_ADDR
     default 0x21
 config DRONE_SAMPLE_RATE_HZ
     int "Five-sensor output rate (Hz)"
-    range 1 100
-    default 100
+    range 1 200
+    default 200
+
+menu "ESP32 WiFi collection page"
+config DRONE_WIFI_AP_SSID
+    string "SoftAP SSID"
+    default "DronePressure"
+config DRONE_WIFI_AP_PASSWORD
+    string "SoftAP password (8+ characters)"
+    default "pressure123"
+config DRONE_WIFI_AP_CHANNEL
+    int "SoftAP channel"
+    range 1 13
+    default 6
+endmenu
+
+menu "Atlas wireless serial link"
+config DRONE_LINK_UART_NUM
+    int "UART number"
+    range 0 2
+    default 1
+config DRONE_LINK_TX_GPIO
+    int "UART TX GPIO"
+    default 17
+config DRONE_LINK_RX_GPIO
+    int "UART RX GPIO"
+    default 18
+config DRONE_LINK_BAUD_RATE
+    int "Transparent serial baud rate"
+    default 115200
+config DRONE_LINK_WATCHDOG_MS
+    int "Motion watchdog timeout (ms)"
+    range 200 10000
+    default 1000
+endmenu
 
 choice DRONE_FILTER_MODE
     prompt "Pressure filter"
@@ -62,19 +95,19 @@ config DRONE_FILTER_WINDOW_SIZE
 config DRONE_FILTER_KALMAN_Q_MILLI
     int "Kalman process noise Q (0.001 Pa^2)"
     range 1 1000000
-    default 10
+    default 30
     depends on DRONE_FILTER_KALMAN
     help
-        Default 10 means Q=0.010 Pa^2. Increasing Q makes the filter track
+        Default 30 means Q=0.030 Pa^2. Increasing Q makes the filter track
         pressure changes faster but provides less smoothing.
 
 config DRONE_FILTER_KALMAN_R_MILLI
     int "Kalman measurement noise R (0.001 Pa^2)"
     range 1 10000000
-    default 1000
+    default 20
     depends on DRONE_FILTER_KALMAN
     help
-        Default 1000 means R=1.000 Pa^2. Increasing R provides stronger
+        Default 20 means R=0.020 Pa^2. Increasing R provides stronger
         smoothing but increases response delay.
 
 choice DRONE_OUTPUT_FORMAT_CHOICE
@@ -105,35 +138,39 @@ config DRONE_SERVO_MODE
     int
     default 0 if DRONE_SERVO_MODE_PULSE
     default 1 if DRONE_SERVO_MODE_MODBUS
-config DRONE_SERVO_PULSE_GPIO
-    int "Pulse GPIO"
+config DRONE_SERVO_PULSE_POS_GPIO
+    int "Pulse+ GPIO"
     default 4
-config DRONE_SERVO_DIR_GPIO
-    int "Direction GPIO"
+config DRONE_SERVO_PULSE_NEG_GPIO
+    int "Pulse- GPIO"
     default 5
-config DRONE_SERVO_ENABLE_GPIO
-    int "Enable GPIO"
+config DRONE_SERVO_DIR_POS_GPIO
+    int "Direction+ GPIO"
     default 6
-config DRONE_SERVO_ENABLE_ACTIVE_LOW
-    bool "Enable output active-low"
-    default y
+config DRONE_SERVO_DIR_NEG_GPIO
+    int "Direction- GPIO (held low while moving)"
+    default 7
 config DRONE_SERVO_DIR_INVERT
-    bool "Invert direction output"
-    default n
+    bool "Invert motion direction"
+    default y
 config DRONE_SERVO_DEFAULT_FREQ_HZ
     int "Default pulse/test-wave frequency (Hz)"
     default 10000
 config DRONE_SERVO_MIN_FREQ_HZ
     int "Minimum ramp frequency (Hz)"
-    default 100
+    default 200
 config DRONE_SERVO_MAX_FREQ_HZ
     int "Maximum pulse frequency (Hz)"
     range 100 500000
     default 200000
+config DRONE_SERVO_MAX_SPEED_MM_S
+    int "Default software maximum speed (mm/s)"
+    range 1 3000
+    default 2000
 
 config DRONE_RS485_UART_NUM
     int "RS485 UART number"
-    default 1
+    default 2
 config DRONE_RS485_TX_GPIO
     int "RS485 TX GPIO"
     default 17

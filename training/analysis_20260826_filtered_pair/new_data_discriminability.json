@@ -1,0 +1,234 @@
+{
+  "files": {
+    "obstacle": "D:\\聊天文件\\微信\\xwechat_files\\wxid_1dpbeiucwjug22_2a10\\msg\\file\\2026-08\\20260826T081611_batch_001.csv",
+    "clear": "D:\\聊天文件\\微信\\xwechat_files\\wxid_1dpbeiucwjug22_2a10\\msg\\file\\2026-08\\20260826T081332_batch_001.csv",
+    "prop_obstacle": "D:\\聊天文件\\微信\\xwechat_files\\wxid_1dpbeiucwjug22_2a10\\msg\\file\\2026-08\\20260826T081611_batch_001.csv",
+    "prop_clear": "D:\\聊天文件\\微信\\xwechat_files\\wxid_1dpbeiucwjug22_2a10\\msg\\file\\2026-08\\20260826T081611_batch_001.csv"
+  },
+  "propeller_files_identical": true,
+  "trials": {
+    "obstacle": 20,
+    "clear": 20,
+    "obstacle_sources": 1,
+    "clear_sources": 1
+  },
+  "sample_rate_hz": {
+    "median": 200.0,
+    "q1": 200.0,
+    "q3": 200.0
+  },
+  "stored_label_values": {
+    "obstacle": [
+      1
+    ],
+    "clear": [
+      0
+    ]
+  },
+  "features": {
+    "raw": {
+      "rise_300ms": {
+        "clear_mean": -0.045482499999999995,
+        "obstacle_mean": -0.07473250000000001,
+        "clear_median": 0.029200000000000018,
+        "obstacle_median": -0.03372500000000001,
+        "cohen_d": -0.1145593655415734,
+        "auc": 0.425,
+        "oriented_auc": 0.575,
+        "auc_95ci": [
+          0.3825,
+          0.75
+        ],
+        "best_same_data_threshold": {
+          "threshold": 0.049850000000000005,
+          "direction": "<=",
+          "recall": 0.85,
+          "specificity": 0.5,
+          "balanced_accuracy": 0.675
+        }
+      },
+      "slope_300ms": {
+        "clear_mean": -0.10904901361489303,
+        "obstacle_mean": -0.3009732147818839,
+        "clear_median": 0.1517043623228675,
+        "obstacle_median": -0.3292017227007502,
+        "cohen_d": -0.18468599128168453,
+        "auc": 0.4025,
+        "oriented_auc": 0.5974999999999999,
+        "auc_95ci": [
+          0.4074375,
+          0.7775
+        ],
+        "best_same_data_threshold": {
+          "threshold": 0.35650958599611005,
+          "direction": "<=",
+          "recall": 0.9,
+          "specificity": 0.45,
+          "balanced_accuracy": 0.675
+        }
+      },
+      "slope_change": {
+        "clear_mean": -0.4453126979716588,
+        "obstacle_mean": -0.23706096137816066,
+        "clear_median": -0.34231953320366765,
+        "obstacle_median": -0.1554295637677133,
+        "cohen_d": 0.1259864387476732,
+        "auc": 0.545,
+        "oriented_auc": 0.545,
+        "auc_95ci": [
+          0.355,
+          0.72
+        ],
+        "best_same_data_threshold": {
+          "threshold": -1.5152745207001945,
+          "direction": ">=",
+          "recall": 0.95,
+          "specificity": 0.3,
+          "balanced_accuracy": 0.625
+        }
+      },
+      "peak_rise": {
+        "clear_mean": 0.36863,
+        "obstacle_mean": 0.30773,
+        "clear_median": 0.28464999999999996,
+        "obstacle_median": 0.282875,
+        "cohen_d": -0.3189516975787848,
+        "auc": 0.4325,
+        "oriented_auc": 0.5675,
+        "auc_95ci": [
+          0.37,
+          0.7475624999999997
+        ],
+        "best_same_data_threshold": {
+          "threshold": 0.502275,
+          "direction": "<=",
+          "recall": 0.85,
+          "specificity": 0.4,
+          "balanced_accuracy": 0.625
+        }
+      },
+      "range_1s": {
+        "clear_mean": 1.58898,
+        "obstacle_mean": 1.49362,
+        "clear_median": 1.54465,
+        "obstacle_median": 1.5223,
+        "cohen_d": -0.4078350463009857,
+        "auc": 0.425,
+        "oriented_auc": 0.575,
+        "auc_95ci": [
+          0.39,
+          0.7475
+        ],
+        "best_same_data_threshold": {
+          "threshold": 1.75545,
+          "direction": "<=",
+          "recall": 1.0,
+          "specificity": 0.2,
+          "balanced_accuracy": 0.6
+        }
+      }
+    },
+    "filtered": {
+      "rise_300ms": {
+        "clear_mean": -0.040026036960046654,
+        "obstacle_mean": -0.07900808554552789,
+        "clear_median": 0.010894963517053553,
+        "obstacle_median": -0.05573190829967757,
+        "cohen_d": -0.1599273997807113,
+        "auc": 0.43,
+        "oriented_auc": 0.5700000000000001,
+        "auc_95ci": [
+          0.38,
+          0.7475
+        ],
+        "best_same_data_threshold": {
+          "threshold": 0.0436061370608214,
+          "direction": "<=",
+          "recall": 0.85,
+          "specificity": 0.5,
+          "balanced_accuracy": 0.675
+        }
+      },
+      "slope_300ms": {
+        "clear_mean": -0.09937892953527391,
+        "obstacle_mean": -0.29069480578968665,
+        "clear_median": 0.12622099732855568,
+        "obstacle_median": -0.30669572710328835,
+        "cohen_d": -0.1887612164010388,
+        "auc": 0.415,
+        "oriented_auc": 0.585,
+        "auc_95ci": [
+          0.3925,
+          0.7675
+        ],
+        "best_same_data_threshold": {
+          "threshold": -0.029174828220880553,
+          "direction": "<=",
+          "recall": 0.75,
+          "specificity": 0.6,
+          "balanced_accuracy": 0.675
+        }
+      },
+      "slope_change": {
+        "clear_mean": -0.42674908979293935,
+        "obstacle_mean": -0.2185680034791009,
+        "clear_median": -0.340528277531205,
+        "obstacle_median": -0.13404314207220672,
+        "cohen_d": 0.1272169451425932,
+        "auc": 0.5525,
+        "oriented_auc": 0.5525,
+        "auc_95ci": [
+          0.3675,
+          0.7275
+        ],
+        "best_same_data_threshold": {
+          "threshold": -1.4195174766536982,
+          "direction": ">=",
+          "recall": 0.95,
+          "specificity": 0.3,
+          "balanced_accuracy": 0.625
+        }
+      },
+      "peak_rise": {
+        "clear_mean": 0.30435478943860533,
+        "obstacle_mean": 0.24109690362707079,
+        "clear_median": 0.2506038166142366,
+        "obstacle_median": 0.19531817768783372,
+        "cohen_d": -0.34402366125020817,
+        "auc": 0.4275,
+        "oriented_auc": 0.5725,
+        "auc_95ci": [
+          0.375,
+          0.7575
+        ],
+        "best_same_data_threshold": {
+          "threshold": 0.24579566200863592,
+          "direction": "<=",
+          "recall": 0.7,
+          "specificity": 0.55,
+          "balanced_accuracy": 0.625
+        }
+      },
+      "range_1s": {
+        "clear_mean": 1.4665867188253374,
+        "obstacle_mean": 1.374541373019501,
+        "clear_median": 1.3952434736380737,
+        "obstacle_median": 1.4201057184741832,
+        "cohen_d": -0.4085820667833591,
+        "auc": 0.44,
+        "oriented_auc": 0.56,
+        "auc_95ci": [
+          0.37,
+          0.745
+        ],
+        "best_same_data_threshold": {
+          "threshold": 1.558607884596287,
+          "direction": "<=",
+          "recall": 0.9,
+          "specificity": 0.35,
+          "balanced_accuracy": 0.625
+        }
+      }
+    }
+  }
+}
