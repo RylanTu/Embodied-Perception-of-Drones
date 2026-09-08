@@ -21,14 +21,16 @@ from model_detector import HybridDetector
 from lidar_runtime import LidarController, PositionTimeline
 from plot_generator import generate_experiment_plots
 from protocol import (ACK, ACK_PAYLOAD, CLEAR_STOP, CONFIG_MOTION, CONFIG_SENSOR_TEST,
-                      ENABLE, FrameDecoder, HEARTBEAT, MOVE_ABSOLUTE, MOVE_DISTANCE, STATUS, STOP, TELEMETRY,
-                      decode_status, decode_telemetry, encode_frame, motion_config_payload, move_payload,
-                      sensor_test_config_payload, move_distance_payload)
+                      ENABLE, FrameDecoder, HEARTBEAT, JsonLineDecoder, MOVE_ABSOLUTE,
+                      MOVE_DISTANCE, STATUS, STOP, TELEMETRY, decode_status,
+                      decode_telemetry, decode_usb_telemetry, encode_frame,
+                      motion_config_payload, move_payload, sensor_test_config_payload,
+                      move_distance_payload, usb_text_command)
 
 ROOT = Path(__file__).resolve().parent
 DATA_ROOT = ROOT / "data"
 DEFAULT_CONFIG = {
-    "serial": {"port": "/dev/ttyACM0", "baud": 115200}, "prefer_npu": True,
+    "serial": {"port": "/dev/ttyACM0", "baud": 115200, "protocol": "auto"}, "prefer_npu": True,
     "lidar": {"enabled": False, "port": "/dev/ttyUSB0", "baud": 115200,
               "pitch_deg": 45.0, "minimum_distance_mm": 50.0,
               "maximum_distance_mm": 6000.0, "minimum_quality": 1,
@@ -82,6 +84,8 @@ def validate_config(config):
         raise ValueError("ESP32串口必须是/dev/tty或/dev/serial下的设备路径")
     if not 1200 <= int(config["serial"]["baud"]) <= 3000000:
         raise ValueError("串口波特率无效")
+    if config["serial"].get("protocol", "auto") not in ("auto", "json", "binary"):
+        raise ValueError("ESP32串口协议必须是auto、json或binary")
     if not 1 <= float(config["sample_rate_hz"]) <= 1000:
         raise ValueError("采样率无效")
     lidar = config["lidar"]
@@ -160,6 +164,7 @@ class AppState:
         self.detector = HybridDetector(self.config, ROOT)
         self.position_timeline = PositionTimeline()
         self.latest = None; self.last_telemetry_time = 0.0; self.serial_error = ""; self.crc_errors = 0
+        self.serial_protocol = "detecting"
         self.lidar_status = {"enabled": bool(self.config["lidar"]["enabled"]),
                              "connected": False, "error": "", "revolutions": 0,
                              "rejected_revolutions": 0, "current_points": 0,
@@ -223,6 +228,7 @@ class AppState:
         with self.lock:
             return {"connected": time.monotonic() - self.last_telemetry_time < 1.0,
                     "serial_error": self.serial_error, "crc_errors": self.crc_errors,
+                    "serial_protocol": self.serial_protocol,
                     "latest": copy.deepcopy(self.latest), "role": "integrated_controller",
                     "lidar": copy.deepcopy(self.lidar_status),
                     "batch": self.batch.public_status() if self.batch else {"active": False}}
@@ -318,8 +324,10 @@ class AppState:
 class SerialController(threading.Thread):
     def __init__(self, state):
         super().__init__(name="serial-controller", daemon=True)
-        self.state = state; self.decoder = FrameDecoder(); self.stop_event = threading.Event()
-        self.reopen_event = threading.Event(); self.write_lock = threading.Lock(); self.serial = None; self.sequence = 0
+        self.state = state; self.decoder = FrameDecoder(); self.json_decoder = JsonLineDecoder()
+        self.stop_event = threading.Event(); self.reopen_event = threading.Event()
+        self.write_lock = threading.Lock(); self.serial = None; self.sequence = 0
+        self.transport = None
 
     def reconfigure(self):
         self.reopen_event.set()
@@ -327,14 +335,48 @@ class SerialController(threading.Thread):
             try: self.serial.close()
             except Exception: pass
 
-    def send(self, message_type, payload=b""):
+    def _send_binary(self, message_type, payload=b""):
         with self.write_lock:
             if self.serial is None or not self.serial.is_open: raise RuntimeError("串口尚未连接")
             sequence = self.sequence; self.sequence = (self.sequence + 1) & 0xFFFF
             self.serial.write(encode_frame(message_type, sequence, payload)); return sequence
 
+    def _set_transport(self, transport):
+        with self.state.ack_condition:
+            self.transport = transport
+            self.state.serial_protocol = transport
+            self.state.ack_condition.notify_all()
+
+    def _wait_transport(self, timeout):
+        deadline = time.monotonic() + timeout
+        with self.state.ack_condition:
+            while self.transport is None:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0: raise RuntimeError("尚未识别ESP32串口协议")
+                self.state.ack_condition.wait(remaining)
+            return self.transport
+
     def command(self, message_type, payload=b"", timeout=3.0):
-        sequence = self.send(message_type, payload); deadline = time.monotonic() + timeout
+        transport = self._wait_transport(timeout)
+        deadline = time.monotonic() + timeout
+        if transport == "json":
+            name, line = usb_text_command(message_type, payload)
+            key = "text:" + name
+            with self.state.ack_condition:
+                self.state.acks.pop(key, None)
+            with self.write_lock:
+                if self.serial is None or not self.serial.is_open: raise RuntimeError("串口尚未连接")
+                self.serial.write(line)
+            with self.state.ack_condition:
+                while key not in self.state.acks:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0: raise RuntimeError(f"命令{name}等待ESP32 USB确认超时")
+                    self.state.ack_condition.wait(remaining)
+                ack = self.state.acks.pop(key)
+            if ack["result"] != 0:
+                raise RuntimeError(f"ESP32拒绝命令{name}，错误码{ack['result']}")
+            return
+        sequence = self._send_binary(message_type, payload)
         with self.state.ack_condition:
             while sequence not in self.state.acks:
                 remaining = deadline - time.monotonic()
@@ -343,6 +385,19 @@ class SerialController(threading.Thread):
             ack = self.state.acks.pop(sequence)
         if ack["request"] != message_type or ack["result"] != 0:
             raise RuntimeError(f"ESP32拒绝命令0x{message_type:02X}，错误码{ack['result']}")
+
+    def _handle_json(self, message):
+        kind = message.get("type")
+        if kind == "data":
+            self.state.on_telemetry(decode_usb_telemetry(message))
+        elif kind == "reply":
+            key = "text:" + str(message.get("command", "")).upper()
+            with self.state.ack_condition:
+                self.state.acks[key] = {
+                    "request": key,
+                    "result": 0 if message.get("ok") else int(message.get("code", -1)),
+                }
+                self.state.ack_condition.notify_all()
 
     def run(self):
         try: import serial
@@ -353,13 +408,33 @@ class SerialController(threading.Thread):
             try:
                 with self.state.lock: settings = copy.deepcopy(self.state.config["serial"])
                 self.serial = serial.Serial(settings["port"], int(settings["baud"]), timeout=.05, write_timeout=.2)
-                self.reopen_event.clear(); self.decoder = FrameDecoder()
-                with self.state.lock: self.state.serial_error = ""
+                self.reopen_event.clear(); self.decoder = FrameDecoder(); self.json_decoder = JsonLineDecoder()
+                configured = settings.get("protocol", "auto")
+                self._set_transport(None if configured == "auto" else configured)
+                with self.state.lock:
+                    self.state.serial_error = ""
+                    self.state.serial_protocol = configured if configured != "auto" else "detecting"
+                if configured != "binary":
+                    with self.write_lock:
+                        self.serial.write(b"\nHELLO\nSTREAM 1\n")
                 last_heartbeat = 0.0
+                opened_at = time.monotonic(); binary_probe_sent = configured == "binary"
                 while not self.stop_event.is_set() and not self.reopen_event.is_set():
                     now = time.monotonic()
-                    if now - last_heartbeat >= .2: self.send(HEARTBEAT); last_heartbeat = now
-                    for frame in self.decoder.feed(self.serial.read(512)):
+                    raw = self.serial.read(512)
+                    messages = self.json_decoder.feed(raw) if self.transport != "binary" else []
+                    frames = self.decoder.feed(raw) if self.transport != "json" else []
+                    if self.transport is None:
+                        if messages:
+                            self._set_transport("json")
+                        elif frames:
+                            self._set_transport("binary")
+                        elif not binary_probe_sent and now - opened_at >= .4:
+                            self._send_binary(HEARTBEAT)
+                            binary_probe_sent = True
+                    for message in messages:
+                        self._handle_json(message)
+                    for frame in frames:
                         if frame.message_type == TELEMETRY: self.state.on_telemetry(decode_telemetry(frame.payload))
                         elif frame.message_type == STATUS: self.state.on_status(decode_status(frame.payload))
                         elif frame.message_type == ACK and len(frame.payload) == ACK_PAYLOAD.size:
@@ -368,11 +443,20 @@ class SerialController(threading.Thread):
                                 with self.state.ack_condition:
                                     self.state.acks[frame.sequence] = {"request": request, "result": result}
                                     self.state.ack_condition.notify_all()
+                    if self.transport and now - last_heartbeat >= .2:
+                        if self.transport == "json":
+                            with self.write_lock: self.serial.write(b"HEARTBEAT\n")
+                        else:
+                            self._send_binary(HEARTBEAT)
+                        last_heartbeat = now
                     with self.state.lock: self.state.crc_errors = self.decoder.crc_errors
             except Exception as exc:
-                with self.state.lock: self.state.serial_error = str(exc)
+                with self.state.lock:
+                    self.state.serial_error = str(exc)
+                    self.state.serial_protocol = "disconnected"
                 time.sleep(1)
             finally:
+                self.transport = None
                 if self.serial:
                     try: self.serial.close()
                     except Exception: pass

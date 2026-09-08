@@ -4,14 +4,19 @@ import unittest
 from protocol import (
     FrameDecoder,
     HEARTBEAT,
+    JsonLineDecoder,
+    MOVE_DISTANCE,
     SENSOR_TEST_CONFIG_PAYLOAD,
     STATUS_PAYLOAD,
     TELEMETRY_PAYLOAD,
     crc16,
     decode_status,
     decode_telemetry,
+    decode_usb_telemetry,
     encode_frame,
     sensor_test_config_payload,
+    move_distance_payload,
+    usb_text_command,
 )
 
 
@@ -75,6 +80,24 @@ class ProtocolTests(unittest.TestCase):
                                               "pulse_width_ms": 150})
         self.assertEqual(len(payload), 20)
         self.assertEqual(SENSOR_TEST_CONFIG_PAYLOAD.unpack(payload), (1, -1250, 5500, 2000, 150))
+
+    def test_native_usb_json_stream_is_fragment_safe(self):
+        decoder = JsonLineDecoder()
+        self.assertEqual(decoder.feed(b'noise\n{"type":"da'), [])
+        messages = decoder.feed(
+            b'ta","ms":10,"seq":2,"p":[1,2,3,4,5],"t":[20,20,20,20,20],'
+            b'"valid_mask":31,"position_mm":125.5}\r\n')
+        self.assertEqual(len(messages), 1)
+        sample = decode_usb_telemetry(messages[0])
+        self.assertEqual(sample["pressure_pa"], [1, 2, 3, 4, 5])
+        self.assertEqual(sample["position_mm"], 125.5)
+        self.assertTrue(all(sample["valid"]))
+
+    def test_distance_move_translates_to_native_usb_command(self):
+        name, line = usb_text_command(MOVE_DISTANCE,
+                                      move_distance_payload(1900, 1500, 225, 75))
+        self.assertEqual(name, "MOVE_MM")
+        self.assertEqual(line, b"MOVE_MM 1900.000 1500.000 225.000 75.000\n")
 
 
 if __name__ == "__main__":

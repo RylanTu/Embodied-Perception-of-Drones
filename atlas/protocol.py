@@ -1,8 +1,10 @@
-"""Shared binary protocol for the Atlas USB serial link."""
+"""ESP32 binary UART protocol and native USB JSON-line compatibility layer."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
+import math
 import struct
 
 MAGIC = 0xA55A
@@ -228,3 +230,105 @@ def sensor_test_config_payload(config: dict) -> bytes:
         int(config["period_ms"]),
         int(config["pulse_width_ms"]),
     )
+
+
+class JsonLineDecoder:
+    """Incrementally decode the line protocol emitted by capture_usb.c."""
+
+    def __init__(self, maximum_line_bytes: int = 4096) -> None:
+        self.buffer = bytearray()
+        self.maximum_line_bytes = maximum_line_bytes
+        self.errors = 0
+
+    def feed(self, data: bytes) -> list[dict]:
+        self.buffer.extend(data)
+        messages = []
+        while b"\n" in self.buffer:
+            raw, _, remainder = self.buffer.partition(b"\n")
+            self.buffer = bytearray(remainder)
+            raw = raw.strip()
+            if not raw:
+                continue
+            try:
+                message = json.loads(raw.decode("utf-8"))
+                if isinstance(message, dict) and isinstance(message.get("type"), str):
+                    messages.append(message)
+                else:
+                    self.errors += 1
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                self.errors += 1
+        if len(self.buffer) > self.maximum_line_bytes:
+            self.buffer.clear()
+            self.errors += 1
+        return messages
+
+
+def decode_usb_telemetry(message: dict) -> dict:
+    pressure = [float(value) for value in message["p"]]
+    temperature = [float(value) for value in message["t"]]
+    if len(pressure) != 5 or len(temperature) != 5 or not all(
+            math.isfinite(value) for value in pressure + temperature):
+        raise ValueError("USB遥测必须包含5路有限压力和温度")
+    valid_mask = int(message.get("valid_mask", 0)) & 0x1F
+    diagnostics = list(message.get("diag", [None] * 5))
+    error_counts = list(message.get("sensor_errors", [None] * 5))
+    last_errors = list(message.get("i2c_errors", [None] * 5))
+    if not (len(diagnostics) == len(error_counts) == len(last_errors) == 5):
+        raise ValueError("USB传感器诊断长度无效")
+    diagnostic_values = []
+    for code, count, error in zip(diagnostics, error_counts, last_errors):
+        normalized_code = None if code is None else int(code)
+        diagnostic_values.append({
+            "code": normalized_code,
+            "reason": ("USB固件未提供诊断" if normalized_code is None else
+                       SENSOR_DIAGNOSTIC_REASONS.get(normalized_code,
+                                                     f"未知故障{normalized_code}")),
+            "error_count": None if count is None else int(count),
+            "esp_error": None if error is None else int(error),
+        })
+    return {
+        "uptime_ms": int(message["ms"]),
+        "sample_sequence": int(message["seq"]),
+        "pressure_pa": pressure,
+        "temperature_c": temperature,
+        "valid": [bool(valid_mask & (1 << index)) for index in range(5)],
+        "valid_mask": valid_mask,
+        "enabled": bool(message.get("enabled", False)),
+        "stopped": bool(message.get("stopped", False)),
+        "moving": bool(message.get("moving", False)),
+        "direction_positive": bool(message.get("direction_positive", False)),
+        "position_trusted": False,
+        "sensor_test_mode": bool(message.get("sensor_test_mode", False)),
+        "position_mm": float(message.get("position_mm", 0.0)),
+        "pulses_per_meter": int(message.get("pulses_per_meter", 80000)),
+        "sensor_diagnostics": diagnostic_values,
+    }
+
+
+def usb_text_command(message_type: int, payload: bytes = b"") -> tuple[str, bytes]:
+    """Translate an Atlas command to the native USB text protocol."""
+    if message_type == HEARTBEAT:
+        return "HEARTBEAT", b"HEARTBEAT\n"
+    if message_type == STOP:
+        return "STOP", b"STOP\n"
+    if message_type == CLEAR_STOP:
+        return "CLEAR", b"CLEAR\n"
+    if message_type == ENABLE:
+        if len(payload) != 1:
+            raise ValueError("ENABLE负载无效")
+        return "ENABLE", f"ENABLE {int(bool(payload[0]))}\n".encode()
+    if message_type == CONFIG_MOTION:
+        values = MOTION_CONFIG_PAYLOAD.unpack(payload)
+        return "CONFIG", ("CONFIG " + " ".join(f"{value / 1000.0:.3f}" for value in values) +
+                          "\n").encode()
+    if message_type in (MOVE_ABSOLUTE, MOVE_DISTANCE):
+        target, speed, accel, decel = MOVE_PAYLOAD.unpack(payload)
+        name = "MOVE_MM" if message_type == MOVE_DISTANCE else "MOVE"
+        scale_tail = 1000.0 if message_type == MOVE_DISTANCE else 1.0
+        line = f"{name} {target / 1000.0:.3f} {speed / 1000.0:.3f} {accel / scale_tail:.3f} {decel / scale_tail:.3f}\n"
+        return name, line.encode()
+    if message_type == CONFIG_SENSOR_TEST:
+        enabled, baseline, amplitude, period, width = SENSOR_TEST_CONFIG_PAYLOAD.unpack(payload)
+        line = f"TEST {enabled} {baseline / 1000.0:.4f} {amplitude / 1000.0:.4f} {period} {width}\n"
+        return "TEST", line.encode()
+    raise ValueError(f"原生USB不支持命令0x{message_type:02X}")
