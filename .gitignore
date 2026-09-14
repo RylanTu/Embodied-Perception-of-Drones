@@ -12,9 +12,19 @@
 *.swo
 *.bak
 *.tmp
+/tmp/
+
+# Local packaging and one-off backups
+/dist/
+/.cleanup-backup-*/
+/.git-backup-*.zip
+/atlas*.zip
 
 # Log files
 *.log
+
+# Browser profiles created while rendering analysis outputs
+/analysis/output/edge-render-*/
 
 # Build artifacts and directories
 **/build/
@@ -22,13 +32,15 @@ build/
 *.o
 *.a
 *.out
-*.exe # For any host-side utilities compiled on Windows
+# Host-side utilities compiled on Windows
+*.exe
 
 # ESP-IDF specific build outputs
 *.bin
 *.elf
 *.map
-flasher_args.json # Generated in build directory
+# Generated in the ESP-IDF build directory
+flasher_args.json
 sdkconfig.old
 sdkconfig
 
@@ -53,6 +65,7 @@ CTestTestfile.cmake
 *.pyo
 *.pyd
 __pycache__/
+.pytest_cache/
 *.egg-info/
 dist/
 
