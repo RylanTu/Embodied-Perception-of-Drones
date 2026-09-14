@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Train a causal single-channel pressure-ramp classifier from ESP32 UI CSV files."""
+"""Train a causal multi-channel pressure-ramp classifier from ESP32 UI CSV files."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
 
-PRESSURE_COLUMNS = ["pressure_pa_1"]
+PRESSURE_COLUMNS = [f"pressure_pa_{index}" for index in range(1, 6)]
 
 
 def load_runs(path: Path) -> list[dict]:
@@ -51,14 +51,16 @@ def load_runs(path: Path) -> list[dict]:
         if pressure.shape[1] < 20:
             print(f"skip {path.name}/{trial_id}: fewer than 20 samples")
             continue
-        required_mask = (1 << len(PRESSURE_COLUMNS)) - 1
+        required_mask = sum(1 << (int(column.rsplit("_", 1)[1]) - 1)
+                            for column in PRESSURE_COLUMNS)
         if np.mean((valid_mask & required_mask) == required_mask) < 0.9:
-            print(f"skip {path.name}/{trial_id}: channel 1 is valid in fewer than 90% of samples")
+            print(f"skip {path.name}/{trial_id}: at least one selected channel is valid in fewer than 90% of samples")
             continue
         usable = True
         num_channels = len(PRESSURE_COLUMNS)
-        for channel in range(num_channels):
-            valid = (valid_mask & (1 << channel)) != 0
+        for channel, column in enumerate(PRESSURE_COLUMNS):
+            sensor_bit = int(column.rsplit("_", 1)[1]) - 1
+            valid = (valid_mask & (1 << sensor_bit)) != 0
             indices = np.arange(pressure.shape[1])
             if not np.any(valid):
                 usable = False
@@ -167,14 +169,16 @@ def split_named(runs: list[dict], seed: int) -> tuple[list[dict], list[dict], li
     return result[0], result[1], result[2]
 
 
-def make_split(runs: list[dict], args) -> tuple[torch.Tensor, torch.Tensor]:
-    samples, labels = [], []
-    for run in runs:
+def make_split(runs: list[dict], args) -> tuple[torch.Tensor, torch.Tensor, np.ndarray]:
+    samples, labels, run_indices = [], [], []
+    for index, run in enumerate(runs):
         x, y = windows_for_run(run, args.window_samples, args.stride_samples,
                                args.positive_horizon_samples, args.drop_guard_samples)
         samples.append(x)
         labels.append(y)
-    return torch.from_numpy(np.concatenate(samples)[:, :, None, :]), torch.from_numpy(np.concatenate(labels))
+        run_indices.append(np.full(len(y), index, dtype=np.int32))
+    return (torch.from_numpy(np.concatenate(samples)[:, :, None, :]),
+            torch.from_numpy(np.concatenate(labels)), np.concatenate(run_indices))
 
 
 class RampNet(nn.Module):
@@ -215,6 +219,17 @@ def metrics(probability: np.ndarray, target: np.ndarray, threshold: float) -> di
             "f1": 2 * precision * recall / max(1e-12, precision + recall)}
 
 
+def run_metrics(probability: np.ndarray, run_indices: np.ndarray,
+                runs: list[dict], threshold: float) -> dict:
+    """Score one alarm at any time as one positive experimental run."""
+    scores = np.asarray([probability[run_indices == index].max()
+                         for index in range(len(runs))], dtype=np.float32)
+    targets = np.asarray([run["label"] for run in runs], dtype=np.float32)
+    result = metrics(scores, targets, threshold)
+    result["runs"] = len(runs)
+    return result
+
+
 @torch.no_grad()
 def probabilities(model: nn.Module, x: torch.Tensor, batch_size: int) -> np.ndarray:
     model.eval()
@@ -229,6 +244,8 @@ def main() -> None:
                         help="directory containing ESP32 CSV files (default: E:\\Research\\2026-8-22-pressure)")
     parser.add_argument("--output", type=Path, default=Path("training/output"))
     parser.add_argument("--sample-rate-hz", type=int, default=200)
+    parser.add_argument("--channels", default="1,2,3,4,5",
+                        help="comma-separated pressure channel numbers (default: all five)")
     parser.add_argument("--window-samples", type=int, default=200, help="causal input length; 200=1 s at 200 Hz")
     parser.add_argument("--stride-samples", type=int, default=20)
     parser.add_argument("--positive-horizon-samples", type=int, default=60, help="ramp region before terminal fall")
@@ -240,6 +257,12 @@ def main() -> None:
     parser.add_argument("--split-mode", choices=("auto", "named", "batch"), default="auto",
                         help="auto uses *_t/*_v names when present, otherwise whole-batch split")
     args = parser.parse_args()
+    global PRESSURE_COLUMNS
+    channel_numbers = [int(value.strip()) for value in args.channels.split(",") if value.strip()]
+    if not channel_numbers or len(set(channel_numbers)) != len(channel_numbers) or \
+            any(value not in range(1, 6) for value in channel_numbers):
+        raise ValueError("channels must be unique values from 1 to 5")
+    PRESSURE_COLUMNS = [f"pressure_pa_{value}" for value in channel_numbers]
     random.seed(args.seed); np.random.seed(args.seed); torch.manual_seed(args.seed)
     if args.window_samples < 20 or args.positive_horizon_samples < 1:
         raise ValueError("window and positive horizon are too short")
@@ -254,9 +277,10 @@ def main() -> None:
         split_mode = "batch"
     train_runs, val_runs, test_runs = (split_named(runs, args.seed) if split_mode == "named"
                                        else split_runs(runs, args.seed))
-    train_x, train_y = make_split(train_runs, args)
-    val_x, val_y = make_split(val_runs, args)
-    test_x, test_y = make_split(test_runs, args) if test_runs else (None, None)
+    train_x, train_y, train_run_index = make_split(train_runs, args)
+    val_x, val_y, val_run_index = make_split(val_runs, args)
+    test_x, test_y, test_run_index = (make_split(test_runs, args) if test_runs else
+                                      (None, None, None))
 
     derived = RampNet.derive(train_x)
     feature_mean = derived.mean(dim=(0, 2, 3))
@@ -286,13 +310,24 @@ def main() -> None:
     model.load_state_dict(best_state)
 
     val_probability = probabilities(model, val_x, args.batch_size)
-    choices = [metrics(val_probability, val_y.numpy(), threshold / 100) for threshold in range(5, 96)]
-    selected = max(choices, key=lambda value: (value["balanced_accuracy"], value["f1"]))
-    test_result = (metrics(probabilities(model, test_x, args.batch_size), test_y.numpy(),
-                           selected["threshold"]) if test_x is not None else None)
+    choices = []
+    for value in range(5, 96):
+        threshold = value / 100
+        choices.append({"threshold": threshold,
+                        "window": metrics(val_probability, val_y.numpy(), threshold),
+                        "run": run_metrics(val_probability, val_run_index, val_runs, threshold)})
+    selected = max(choices, key=lambda value: (value["run"]["balanced_accuracy"],
+                                                value["run"]["f1"],
+                                                value["window"]["balanced_accuracy"]))
+    test_probability = probabilities(model, test_x, args.batch_size) if test_x is not None else None
+    test_result = ({"window": metrics(test_probability, test_y.numpy(), selected["threshold"]),
+                    "run": run_metrics(test_probability, test_run_index, test_runs,
+                                       selected["threshold"])}
+                   if test_x is not None else None)
     args.output.mkdir(parents=True, exist_ok=True)
     torch.save({"state_dict": model.state_dict(), "window_samples": args.window_samples,
-                "threshold": selected["threshold"]}, args.output / "pressure_ramp.pt")
+                "threshold": selected["threshold"], "pressure_columns": PRESSURE_COLUMNS},
+               args.output / "pressure_ramp.pt")
     model.eval()
     dummy = torch.zeros(1, len(PRESSURE_COLUMNS), 1, args.window_samples)
     onnx_path = args.output / "pressure_ramp.onnx"
@@ -311,10 +346,26 @@ def main() -> None:
         "sample_rate_hz": args.sample_rate_hz,
         "probability_threshold": selected["threshold"],
         "window_ms": round(args.window_samples * 1000 / args.sample_rate_hz),
-        "training_runs": [run["name"] for run in train_runs],
-        "validation_runs": [run["name"] for run in val_runs],
-        "test_runs": [run["name"] for run in test_runs],
-        "validation_metrics": selected,
+        "training_batches": sorted({run["path"].name for run in train_runs}),
+        "validation_batches": sorted({run["path"].name for run in val_runs}),
+        "test_batches": sorted({run["path"].name for run in test_runs}),
+        "split_run_counts": {"training": len(train_runs), "validation": len(val_runs),
+                             "test": len(test_runs)},
+        "training_hyperparameters": {"seed": args.seed, "epochs": args.epochs,
+                                     "batch_size": args.batch_size,
+                                     "learning_rate": args.learning_rate,
+                                     "stride_samples": args.stride_samples,
+                                     "positive_horizon_samples": args.positive_horizon_samples,
+                                     "drop_guard_samples": args.drop_guard_samples},
+        "architecture": (f"Conv2d({len(PRESSURE_COLUMNS) * 2}→16,k7), "
+                         "Conv2d(16→32,k5,d2), Conv2d(32→32,k3,d2), "
+                         "global average pool, linear(32→1)"),
+        "parameter_count": sum(parameter.numel() for parameter in model.parameters()),
+        "preprocessing": {"features": ["window-relative pressure", "first difference"],
+                          "feature_mean": feature_mean.tolist(),
+                          "feature_std": feature_std.tolist(),
+                          "normalization_embedded_in_model": True},
+        "validation_metrics": {"window": selected["window"], "run": selected["run"]},
         "test_metrics": test_result,
         "warning": ("No independent *_test.csv files were supplied; validation metrics were used "
                     "for threshold selection and are not final test metrics. "

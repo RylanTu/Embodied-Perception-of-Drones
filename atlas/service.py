@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import copy
 import csv
+from collections import deque
 from datetime import datetime
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -19,6 +20,7 @@ from urllib.parse import unquote, urlparse
 
 from model_detector import HybridDetector
 from lidar_runtime import LidarController, PositionTimeline
+from lidar_archive import LidarArchive
 from plot_generator import generate_experiment_plots
 from protocol import (ACK, ACK_PAYLOAD, CLEAR_STOP, CONFIG_MOTION, CONFIG_SENSOR_TEST,
                       ENABLE, FrameDecoder, HEARTBEAT, JsonLineDecoder, MOVE_ABSOLUTE,
@@ -46,8 +48,10 @@ DEFAULT_CONFIG = {
     "sample_rate_hz": 200,
     "plot_filter": {"enabled": True, "median_window": 5, "ema_alpha": 0.35},
     "model": {"enabled": False, "path": "models/pressure_ramp.om", "device_id": 0,
-              "window_samples": 200, "input_channels": 1,
-              "probability_threshold": 0.5, "hold_ms": 300},
+              "window_samples": 200, "input_channels": 5, "channels": [1, 2, 3, 4, 5],
+              "probability_threshold": 0.5, "consecutive_hits": 3, "hold_ms": 300,
+              "stop_on_obstacle": False, "stop_in_test_mode": False,
+              "start_ignore_extra_mm": 100.0},
     "detection": {"alpha": 0.9, "threshold_pa": [2.0] * 5, "gain": [1.0] * 5,
                   "baseline_tau_s": 3.0, "channels_required": 2, "window_ms": 80,
                   "hold_ms": 300},
@@ -129,6 +133,15 @@ def validate_config(config):
         raise ValueError("模型窗口或概率阈值无效")
     if not 1 <= int(model.get("input_channels", 1)) <= 5:
         raise ValueError("模型输入通道数无效")
+    model_channels = model.get("channels", list(range(1, int(model.get("input_channels", 1)) + 1)))
+    if (not isinstance(model_channels, list) or not model_channels or
+            len(model_channels) != len(set(model_channels)) or
+            any(not isinstance(value, int) or value not in range(1, 6) for value in model_channels)):
+        raise ValueError("模型通道必须是1至5之间且不重复的整数")
+    if not 1 <= int(model.get("consecutive_hits", 3)) <= 100:
+        raise ValueError("模型连续命中次数无效")
+    if not 0 <= float(model.get("start_ignore_extra_mm", 0)) <= 1000:
+        raise ValueError("起步额外豁免距离无效")
     if len(detection["threshold_pa"]) != 5 or len(detection["gain"]) != 5:
         raise ValueError("必须提供5路阈值和增益")
 
@@ -163,6 +176,12 @@ class AppState:
         self.config = merge_defaults(DEFAULT_CONFIG, loaded); validate_config(self.config)
         self.detector = HybridDetector(self.config, ROOT)
         self.position_timeline = PositionTimeline()
+        self.lidar_archive = LidarArchive(self.data_dir)
+        self.map_lock = threading.Lock()
+        self.map_points = deque(maxlen=100000)
+        self.map_scan = []
+        self.map_revision = 0
+        self.map_updated = None
         self.latest = None; self.last_telemetry_time = 0.0; self.serial_error = ""; self.crc_errors = 0
         self.serial_protocol = "detecting"
         self.lidar_status = {"enabled": bool(self.config["lidar"]["enabled"]),
@@ -175,6 +194,8 @@ class AppState:
                                            "reason": "雷达尚未启动"}}
         self.latest_pressure_event = None
         self.latest_lidar_event = None
+        self.auto_stop_status = {"latched": False, "reason": "", "position_mm": None,
+                                 "time": None, "error": ""}
         self.status_fields = {"temperature_c": [0.0] * 5, "soft_min_mm": 0.0,
                               "soft_max_mm": 0.0, "pulses_remaining": 0, "link_age_ms": 0,
                               "sample_rate_hz": 200,
@@ -231,6 +252,7 @@ class AppState:
                     "serial_protocol": self.serial_protocol,
                     "latest": copy.deepcopy(self.latest), "role": "integrated_controller",
                     "lidar": copy.deepcopy(self.lidar_status),
+                    "auto_stop": copy.deepcopy(self.auto_stop_status),
                     "batch": self.batch.public_status() if self.batch else {"active": False}}
 
     def _fusion_locked(self, now, pressure_detection=None):
@@ -270,12 +292,27 @@ class AppState:
     def on_telemetry(self, sample):
         with self.lock:
             now = time.monotonic()
+            batch = self.batch
             for key, value in self.status_fields.items():
                 sample.setdefault(key, copy.deepcopy(value))
             sample.setdefault("position_mm", float((self.latest or {}).get("position_mm", 0.0)))
             self.position_timeline.add(now, float(sample["position_mm"]))
             detection = self.detector.process(sample["pressure_pa"], sample["valid"],
                                               float(sample.get("sample_rate_hz", self.config["sample_rate_hz"])))
+            start_ignore_mm = (float(batch.s["accel"]) +
+                               float(self.config["model"].get("start_ignore_extra_mm", 0.0))
+                               if batch and batch.active and batch.recording else 0.0)
+            distance_from_start = (abs(float(sample["position_mm"]) - float(batch.s["start"]))
+                                   if start_ignore_mm > 0 else math.inf)
+            start_ignored = distance_from_start < start_ignore_mm
+            if start_ignored:
+                detection["raw_model_obstacle"] = bool(detection.get("obstacle"))
+                detection["obstacle"] = False
+                detection["start_ignored"] = True
+                detection["start_ignore_remaining_mm"] = max(0.0, start_ignore_mm - distance_from_start)
+                self.detector.reset_decision()
+            else:
+                detection["start_ignored"] = False
             if detection.get("obstacle"):
                 self.latest_pressure_event = {"time": now,
                                               "position_mm": float(sample["position_mm"])}
@@ -287,8 +324,18 @@ class AppState:
             sample["lidar"] = copy.deepcopy(self.lidar_status)
             sample["host_time"] = datetime.now().astimezone().isoformat(timespec="milliseconds")
             sample["host_monotonic_s"] = now
-            self.latest = sample; self.last_telemetry_time = now; batch = self.batch
+            self.latest = sample; self.last_telemetry_time = now
+            model_config = self.config["model"]
+            auto_stop_requested = bool(
+                model_config.get("stop_on_obstacle", False) and
+                detection["pressure_obstacle"] and
+                detection.get("backend") == "ascend_om" and
+                sample.get("moving") and sample.get("enabled") and not sample.get("stopped") and
+                batch is not None and batch.active and batch.recording and
+                (not sample.get("sensor_test_mode") or model_config.get("stop_in_test_mode", False))
+            )
         if batch: batch.on_sample(sample)
+        return auto_stop_requested
 
     def on_lidar_status(self, status):
         with self.lock:
@@ -305,6 +352,17 @@ class AppState:
                 self.latest["detection"]["obstacle"] = fusion["obstacle"]
 
     def on_lidar_scan(self, points, detection):
+        with self.lock:
+            archive_config = copy.deepcopy(self.config["lidar"])
+        self.lidar_archive.append(points, archive_config)
+        with self.map_lock:
+            self.map_scan = [[round(p.angle_deg, 3), round(p.distance_mm, 2)] for p in points]
+            # Display-only decimation; experimental CSV retains every scan point.
+            stride = max(1, math.ceil(len(points) / 2000))
+            self.map_points.extend([round(p.x_m, 4), round(p.y_m, 4), round(p.z_m, 4)]
+                                   for p in points[::stride])
+            self.map_updated = time.monotonic()
+            self.map_revision += 1
         self.on_lidar_status({**copy.deepcopy(self.lidar_status),
                               "enabled": bool(self.config["lidar"]["enabled"]),
                               "connected": True, "error": "",
@@ -313,6 +371,27 @@ class AppState:
             batch = self.batch
         if batch:
             batch.on_lidar_scan(points, detection)
+
+    def public_lidar_map(self):
+        archive = self.lidar_archive.snapshot()
+        with self.map_lock:
+            result = {"archive": archive, "revision": self.map_revision,
+                      "preview_limit": self.map_points.maxlen, "points": list(self.map_points),
+                      "scan": list(self.map_scan),
+                      "age_s": None if self.map_updated is None else time.monotonic() - self.map_updated}
+        with self.lock:
+            result.update(enabled=bool(self.config["lidar"]["enabled"]),
+                          connected=bool(self.lidar_status.get("connected")),
+                          position_mm=(self.latest or {}).get("position_mm"),
+                          max_range_mm=self.config["lidar"]["maximum_distance_mm"])
+        return result
+
+    def clear_lidar_map(self):
+        with self.map_lock:
+            self.map_points.clear()
+            self.map_scan = []
+            self.map_updated = None
+            self.map_revision += 1
 
     def on_status(self, status):
         with self.lock:
@@ -328,6 +407,7 @@ class SerialController(threading.Thread):
         self.stop_event = threading.Event(); self.reopen_event = threading.Event()
         self.write_lock = threading.Lock(); self.serial = None; self.sequence = 0
         self.transport = None
+        self.auto_stop_latched = False
 
     def reconfigure(self):
         self.reopen_event.set()
@@ -375,6 +455,8 @@ class SerialController(threading.Thread):
                 ack = self.state.acks.pop(key)
             if ack["result"] != 0:
                 raise RuntimeError(f"ESP32拒绝命令{name}，错误码{ack['result']}")
+            if message_type == CLEAR_STOP:
+                self._clear_auto_stop_latch()
             return
         sequence = self._send_binary(message_type, payload)
         with self.state.ack_condition:
@@ -385,11 +467,46 @@ class SerialController(threading.Thread):
             ack = self.state.acks.pop(sequence)
         if ack["request"] != message_type or ack["result"] != 0:
             raise RuntimeError(f"ESP32拒绝命令0x{message_type:02X}，错误码{ack['result']}")
+        if message_type == CLEAR_STOP:
+            self._clear_auto_stop_latch()
+
+    def _clear_auto_stop_latch(self):
+        self.auto_stop_latched = False
+        with self.state.lock:
+            self.state.detector.reset_baseline()
+            self.state.auto_stop_status = {"latched": False, "reason": "", "position_mm": None,
+                                           "time": None, "error": ""}
+
+    def _maybe_send_auto_stop(self, requested):
+        if not requested or self.auto_stop_latched or self.transport not in ("json", "binary"):
+            return
+        try:
+            if self.transport == "json":
+                with self.write_lock:
+                    if self.serial is None or not self.serial.is_open:
+                        raise RuntimeError("串口尚未连接")
+                    self.serial.write(b"STOP\n")
+            else:
+                self._send_binary(STOP)
+            self.auto_stop_latched = True
+            with self.state.lock:
+                position = float((self.state.latest or {}).get("position_mm", 0.0))
+                self.state.auto_stop_status = {
+                    "latched": True, "reason": "模型检测到障碍，已立即发送软件停止",
+                    "position_mm": position, "time": datetime.now().astimezone().isoformat(timespec="milliseconds"),
+                    "error": "",
+                }
+                batch = self.state.batch
+            if batch and batch.active:
+                batch.on_auto_stop(position)
+        except Exception as exc:
+            with self.state.lock:
+                self.state.auto_stop_status["error"] = f"自动停止发送失败：{exc}"
 
     def _handle_json(self, message):
         kind = message.get("type")
         if kind == "data":
-            self.state.on_telemetry(decode_usb_telemetry(message))
+            self._maybe_send_auto_stop(self.state.on_telemetry(decode_usb_telemetry(message)))
         elif kind == "reply":
             key = "text:" + str(message.get("command", "")).upper()
             with self.state.ack_condition:
@@ -435,7 +552,8 @@ class SerialController(threading.Thread):
                     for message in messages:
                         self._handle_json(message)
                     for frame in frames:
-                        if frame.message_type == TELEMETRY: self.state.on_telemetry(decode_telemetry(frame.payload))
+                        if frame.message_type == TELEMETRY:
+                            self._maybe_send_auto_stop(self.state.on_telemetry(decode_telemetry(frame.payload)))
                         elif frame.message_type == STATUS: self.state.on_status(decode_status(frame.payload))
                         elif frame.message_type == ACK and len(frame.payload) == ACK_PAYLOAD.size:
                             request, _, result = ACK_PAYLOAD.unpack(frame.payload)
@@ -463,11 +581,16 @@ class SerialController(threading.Thread):
                 self.serial = None
 
 
+class ObstacleDetected(Exception):
+    """Forward measurement was interrupted by the model safety stop."""
+
+
 class BatchRunner(threading.Thread):
     def __init__(self, state, link, settings):
         super().__init__(name="batch-capture", daemon=True)
         self.state = state; self.link = link; self.s = settings; self.guard = threading.RLock()
         self.stop_event = threading.Event(); self.pause_event = threading.Event(); self.recording = False
+        self.obstacle_event = threading.Event(); self.obstacle_position = None; self.obstacle_stops = 0
         self.active = True; self.status = "准备中"; self.completed = 0; self.rows = 0; self.dropped = 0
         self.last_sequence = None; self.trial_index = 0; self.error = ""; self.csv_path = None
         self.lidar_csv_path = None
@@ -478,6 +601,7 @@ class BatchRunner(threading.Thread):
         with self.guard:
             return {"active": self.active, "paused": self.pause_event.is_set(), "status": self.status,
                     "completed": self.completed, "total": self.s["count"], "rows": self.rows,
+                    "obstacle_stops": self.obstacle_stops,
                     "dropped": self.dropped, "error": self.error,
                     "csv": self.csv_path.name if self.csv_path else None,
                     "lidar_csv": self.lidar_csv_path.name if self.lidar_csv_path else None,
@@ -486,6 +610,15 @@ class BatchRunner(threading.Thread):
 
     def set_status(self, text):
         with self.guard: self.status = text
+
+    def on_auto_stop(self, position):
+        with self.guard:
+            if not self.recording or self.obstacle_event.is_set():
+                return
+            self.obstacle_position = float(position)
+            self.obstacle_stops += 1
+            self.obstacle_event.set()
+            self.status = f"检测到障碍物，已在{self.obstacle_position:.1f} mm停止"
 
     def on_sample(self, sample):
         with self.guard:
@@ -541,6 +674,7 @@ class BatchRunner(threading.Thread):
         deadline = time.monotonic() + (abs(target - initial) + 2 * ramp_distance) / max(.1, speed) + 15
         while time.monotonic() < deadline:
             if self.stop_event.is_set(): raise InterruptedError
+            if self.obstacle_event.is_set(): raise ObstacleDetected
             with self.state.lock:
                 sample = copy.deepcopy(self.state.latest)
                 received = self.state.last_telemetry_time
@@ -584,11 +718,27 @@ class BatchRunner(threading.Thread):
                 self.trial_index = index; self.set_status(f"第{index}/{self.s['count']}次：回起点")
                 self.move(self.s["start"], self.s["return_speed"], self.s["return_accel"], self.s["return_decel"])
                 self.set_status(f"第{index}/{self.s['count']}次：等待基线"); self.wait(self.s["baseline_wait"] / 1000)
-                self.last_sequence = None; self.recording = True; self.set_status(f"第{index}/{self.s['count']}次：正向采集")
-                self.move(self.s["end"], self.s["speed"], self.s["accel"], self.s["decel"])
-                self.wait(self.s["end_dwell"] / 1000); self.recording = False; self.completed = index; self.file.flush()
+                self.last_sequence = None; self.obstacle_event.clear(); self.obstacle_position = None
+                self.recording = True; self.set_status(f"第{index}/{self.s['count']}次：正向采集")
+                detected = False
+                try:
+                    self.move(self.s["end"], self.s["speed"], self.s["accel"], self.s["decel"])
+                    self.wait(self.s["end_dwell"] / 1000)
+                except ObstacleDetected:
+                    detected = True
+                    self.set_status(f"第{index}/{self.s['count']}次：障碍停止，等待停稳")
+                    self.wait_not_moving()
+                finally:
+                    self.recording = False
+                self.completed = index; self.file.flush()
                 if self.lidar_file: self.lidar_file.flush()
+                if detected:
+                    self.set_status(
+                        f"第{index}/{self.s['count']}次：检测到障碍，批次结束并保持停止锁定"
+                    )
+                    return
                 self.set_status(f"第{index}/{self.s['count']}次：反向复位")
+                self.obstacle_event.clear()
                 self.move(self.s["start"], self.s["return_speed"], self.s["return_accel"], self.s["return_decel"])
                 if index < self.s["count"]: self.wait(self.s["between_wait"] / 1000)
             self.command(ENABLE, b"\x00"); self.set_status("批次完成")
@@ -640,6 +790,12 @@ class ApiHandler(SimpleHTTPRequestHandler):
     def _body(self): return json.loads(self.rfile.read(int(self.headers.get("Content-Length","0"))) or b"{}")
     def do_GET(self):
         path=urlparse(self.path).path
+        if path=="/api/lidar/map": self._json(self.state.public_lidar_map()); return
+        if path=="/api/lidar/files":
+            files = sorted((self.state.data_dir / "lidar_archive").rglob("*"))
+            self._json([{"name": p.relative_to(self.state.data_dir).as_posix(),
+                         "url": "/data/" + p.relative_to(self.state.data_dir).as_posix()}
+                        for p in files if p.is_file()]); return
         if path=="/api/status": self._json(self.state.public_status()); return
         if path=="/api/config":
             with self.state.lock: self._json(self.state.config)
@@ -657,7 +813,9 @@ class ApiHandler(SimpleHTTPRequestHandler):
     def do_POST(self):
         try:
             path=urlparse(self.path).path; body=self._body()
-            if path=="/api/config":
+            if path=="/api/lidar/map/clear":
+                self.state.clear_lidar_map()
+            elif path=="/api/config":
                 candidate=merge_defaults(self.state.config,body); validate_config(candidate)
                 changed=candidate["serial"]!=self.state.config["serial"]
                 lidar_changed=candidate["lidar"]!=self.state.config["lidar"]
@@ -666,7 +824,9 @@ class ApiHandler(SimpleHTTPRequestHandler):
                     self.state.detector.update_config(candidate)
                     self.state.save_config()
                 if changed:self.link.reconfigure()
-                if lidar_changed:self.lidar.reconfigure()
+                if lidar_changed:
+                    self.state.clear_lidar_map()
+                    self.lidar.reconfigure()
             elif path=="/api/experiment-presets":
                 action=body.get("action")
                 if action=="save": self.state.save_experiment_preset(body.get("name"),body.get("parameters",{}))

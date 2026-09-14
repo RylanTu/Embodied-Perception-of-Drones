@@ -1,0 +1,13 @@
+{
+  "ascend_om": "training/output_20260912_causal_tcn/pressure_causal_tcn.om",
+  "window_samples": 200,
+  "channels": [
+    1,
+    2,
+    3,
+    4,
+    5
+  ],
+  "probability_threshold": 0.53,
+  "consecutive_hits": 3
+}

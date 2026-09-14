@@ -31,6 +31,23 @@
     <div id="motion" class="motion-line">等待设备数据</div>
   </section>
 
+  <section class="panel lidar-panel">
+    <div class="panel-head"><h2>实时雷达地图</h2><span id="mapStatus" class="subtle-status">等待扫描</span></div>
+    <div class="actionbar wrap-actions">
+      <button id="mapPause" class="ghost">暂停显示</button>
+      <button id="mapReset" class="ghost">重置视角</button>
+      <button id="mapClear" class="ghost">清空预览</button>
+      <button id="mapFiles" class="ghost">点云文件</button>
+      <span class="subtle-status">拖动旋转 · 滚轮缩放 · 颜色表示高度</span>
+    </div>
+    <div id="mapArchiveStatus" class="subtle-status" role="status">等待点云自动保存</div>
+    <div id="mapArchiveFiles" hidden></div>
+    <div class="lidar-views">
+      <article><div class="plot-title">累积点云 · X / Y / Z（m）</div><canvas id="lidarMap" aria-label="实时三维累积点云"></canvas></article>
+      <article><div class="plot-title">当前扫描截面（m）</div><canvas id="lidarScan" aria-label="当前雷达极坐标扫描"></canvas></article>
+    </div>
+  </section>
+
   <section class="panel batch-panel">
     <div class="panel-head">
       <div><h2>批量采集</h2></div>
@@ -129,9 +146,10 @@
       <div class="field-grid compact-grid">
         <label>OM模型<select id="modelEnabled"><option value="false">关闭</option><option value="true">启用</option></select></label>
         <label>模型阈值<input id="modelThreshold" type="number" min="0.01" max="0.99" step=".01"></label>
+        <label>障碍自动停止<select id="modelAutoStop"><option value="false">关闭</option><option value="true">启用</option></select></label>
         <label class="span2">模型路径<input id="modelPath"></label>
         <label>模型窗口 <em>点</em><input id="modelWindow" type="number"></label>
-        <label>输入通道数<input id="modelChannels" type="number" min="1" max="5"></label>
+        <label>模型通道<input id="modelChannels" placeholder="2,3,4"></label>
         <label>LIF alpha<input id="alpha" type="number" step=".01"></label>
         <label>触发通道数<input id="channels" type="number"></label>
         <label>基线时间 <em>s</em><input id="baselineTau" type="number"></label>
@@ -161,5 +179,6 @@
   <div id="toast" class="toast"></div>
 </main>
 <script src="app.js"></script>
+<script src="lidar_view.js"></script>
 </body>
 </html>

@@ -26,11 +26,12 @@ def main() -> None:
 
     window = int(checkpoint["window_samples"])
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    dummy = torch.zeros(1, 1, 1, window, dtype=torch.float32)
+    input_channels = int(state["feature_mean"].numel() // 2)
+    dummy = torch.zeros(1, input_channels, 1, window, dtype=torch.float32)
     torch.onnx.export(model, dummy, args.output,
                       input_names=["pressure"], output_names=["logit"],
                       opset_version=13, dynamo=False, external_data=False)
-    print(f"static ONNX written: {args.output} input=[1,1,1,{window}]")
+    print(f"static ONNX written: {args.output} input=[1,{input_channels},1,{window}]")
 
 
 if __name__ == "__main__":

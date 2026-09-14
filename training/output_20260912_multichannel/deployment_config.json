@@ -1,0 +1,12 @@
+{
+  "model": {
+    "enabled": true,
+    "path": "models/pressure_ramp.om",
+    "device_id": 0,
+    "window_samples": 200,
+    "input_channels": 5,
+    "probability_threshold": 0.87,
+    "hold_ms": 300
+  },
+  "sample_rate_hz": 200
+}

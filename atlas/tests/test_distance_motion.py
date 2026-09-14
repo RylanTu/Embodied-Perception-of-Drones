@@ -1,12 +1,15 @@
 import io
 import csv
 import threading
+import tempfile
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from protocol import MOVE_DISTANCE, MOVE_ABSOLUTE, MOVE_PAYLOAD, move_distance_payload, move_payload
-from service import BatchRunner, CSV_COLUMNS, validate_batch, wait_state_not_moving
+from protocol import (CLEAR_STOP, ENABLE, MOVE_DISTANCE, MOVE_ABSOLUTE, MOVE_PAYLOAD,
+                      move_distance_payload, move_payload)
+from service import BatchRunner, CSV_COLUMNS, ObstacleDetected, validate_batch, wait_state_not_moving
 
 
 def settings(**changes):
@@ -21,6 +24,48 @@ def settings(**changes):
 
 
 class DistanceMotionTests(unittest.TestCase):
+    def test_obstacle_stop_signals_current_move_without_user_stop_event(self):
+        runner, _, _ = self.make_runner()
+        runner.recording = True
+        runner.on_auto_stop(812.5)
+        self.assertTrue(runner.obstacle_event.is_set())
+        self.assertFalse(runner.stop_event.is_set())
+        self.assertEqual(runner.obstacle_stops, 1)
+        with self.assertRaises(ObstacleDetected):
+            runner.wait_position(1900, 1500)
+
+    def test_detected_obstacle_ends_batch_without_clear_or_return(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state = SimpleNamespace(
+                lock=threading.RLock(), last_telemetry_time=100.0,
+                latest=dict(position_mm=10, moving=False, enabled=True, stopped=False),
+                data_dir=Path(directory),
+                config={"lidar": {"enabled": False}, "plot_filter": {}},
+            )
+            sent = []
+            runner = BatchRunner(
+                state, SimpleNamespace(command=lambda *args: sent.append(args)), settings()
+            )
+            moves = []
+
+            def move(target, speed, accel, decel):
+                moves.append(target)
+                if target == runner.s["end"]:
+                    runner.obstacle_event.set()
+                    raise ObstacleDetected
+
+            runner.move = move
+            runner.wait = lambda seconds: None
+            runner.wait_not_moving = lambda timeout=5.0: None
+            with patch("service.generate_experiment_plots", return_value=(None, None)):
+                runner.run()
+
+            self.assertEqual(moves, [runner.s["start"], runner.s["end"]])
+            self.assertEqual(sum(command[0] == CLEAR_STOP for command in sent), 1)
+            self.assertEqual(sum(command[0] == ENABLE for command in sent), 1)
+            self.assertIn("保持停止锁定", runner.status)
+            self.assertFalse(runner.active)
+
     def test_distance_payload_and_legacy_are_not_confused(self):
         self.assertNotEqual(MOVE_DISTANCE, MOVE_ABSOLUTE)
         self.assertEqual(MOVE_PAYLOAD.unpack(move_distance_payload(1900, 1500, 225.125, 75)),

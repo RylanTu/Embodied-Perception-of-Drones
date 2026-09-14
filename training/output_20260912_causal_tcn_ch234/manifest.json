@@ -1,0 +1,131 @@
+{
+  "schema_version": 2,
+  "model": "strictly causal TCN trained with run-level multiple-instance learning",
+  "input_shape": [
+    1,
+    3,
+    1,
+    200
+  ],
+  "output_shape": [
+    1,
+    1,
+    1,
+    1
+  ],
+  "pressure_columns": [
+    "pressure_pa_2",
+    "pressure_pa_3",
+    "pressure_pa_4"
+  ],
+  "sample_rate_hz": 200,
+  "probability_threshold": 0.885,
+  "consecutive_hits": 3,
+  "window_ms": 1000,
+  "decision_policy": "alarm after consecutive threshold crossings during forward motion",
+  "causality": "model input contains only the current and preceding 199 samples",
+  "training_region": "forward-run samples before the configured deceleration distance; stop/fall excluded",
+  "labeling": "one label per complete run; no manually selected positive time interval",
+  "training_batches": [
+    "20260912_094119_001.csv",
+    "20260912_095511_001.csv",
+    "20260912_095843_001.csv",
+    "20260912_145548_001.csv",
+    "20260912_151323_001.csv",
+    "20260912_151950_001.csv",
+    "20260912_154247_y_z.csv",
+    "20260912_155410_y_z.csv",
+    "20260912_160501_y_z.csv",
+    "20260912_160824_y_z.csv",
+    "20260912_161458_y_z.csv",
+    "20260912_161823_y_z.csv"
+  ],
+  "validation_batches": [
+    "20260912_112332_001.csv",
+    "20260912_161146_y_z.csv"
+  ],
+  "test_batches": [
+    "20260912_093842_001.csv",
+    "20260912_100341_001.csv",
+    "20260912_150811_001.csv",
+    "20260912_155052_y_z.csv",
+    "20260912_162135_y_z.csv"
+  ],
+  "split_run_counts": {
+    "training": 286,
+    "validation": 81,
+    "test": 81
+  },
+  "training_hyperparameters": {
+    "seed": 20260912,
+    "best_epoch": 16,
+    "max_epochs": 120,
+    "learning_rate": 0.0008,
+    "run_batch_size": 16,
+    "train_stride_samples": 20,
+    "top_k_windows": 3,
+    "negative_window_regularization": 0.15,
+    "augmentation": "per-channel gain, offset, linear drift and Gaussian noise"
+  },
+  "architecture": "10-feature causal TCN, width 24, residual dilations 1/2/4/8/16, fixed causal endpoint head",
+  "parameter_count": 17913,
+  "preprocessing": {
+    "features": [
+      "window-relative pressure",
+      "first difference"
+    ],
+    "feature_mean": [
+      -0.13898248970508575,
+      -0.10172680765390396,
+      -0.07630710303783417,
+      -0.0008495317306369543,
+      -0.001115972874686122,
+      -0.00071348698111251
+    ],
+    "feature_std": [
+      0.44368183612823486,
+      0.48058590292930603,
+      0.4668218791484833,
+      0.05794109031558037,
+      0.050601061433553696,
+      0.06193725764751434
+    ],
+    "normalization_embedded_in_model": true
+  },
+  "validation_metrics": {
+    "threshold": 0.885,
+    "consecutive_hits": 3,
+    "tp": 25,
+    "fp": 4,
+    "tn": 52,
+    "fn": 0,
+    "accuracy": 0.9506172839506173,
+    "precision": 0.8620689655172413,
+    "recall": 1.0,
+    "specificity": 0.9285714285714286,
+    "balanced_accuracy": 0.9642857142857143,
+    "f1": 0.9259259259259259,
+    "detected_positive_lead_mm_median": 92.4000244140625,
+    "alarm_position_mm_median": 1732.5999755859375,
+    "runs": 81
+  },
+  "test_metrics": {
+    "threshold": 0.885,
+    "consecutive_hits": 3,
+    "tp": 33,
+    "fp": 2,
+    "tn": 43,
+    "fn": 3,
+    "accuracy": 0.9382716049382716,
+    "precision": 0.9428571428571428,
+    "recall": 0.9166666666666666,
+    "specificity": 0.9555555555555556,
+    "balanced_accuracy": 0.9361111111111111,
+    "f1": 0.9295774647887323,
+    "detected_positive_lead_mm_median": 105.199951171875,
+    "alarm_position_mm_median": 1719.800048828125,
+    "runs": 81
+  },
+  "excluded_trials": 7,
+  "deployment_note": "Atlas must preserve a rolling 5x200 buffer and apply consecutive_hits exactly as recorded here."
+}
